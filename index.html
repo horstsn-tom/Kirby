@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pong</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: 'Courier New', monospace;
+      color: #fff;
+    }
+    canvas {
+      border: 2px solid #fff;
+      display: block;
+    }
+    #info {
+      margin-top: 12px;
+      font-size: 13px;
+      color: #888;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="pong" width="800" height="500"></canvas>
+  <div id="info">W / S &nbsp;|&nbsp; ↑ / ↓ &nbsp;&nbsp;—&nbsp;&nbsp; Press SPACE to start &nbsp;|&nbsp; First to 7 wins</div>
+
+  <script>
+    const canvas = document.getElementById('pong');
+    const ctx = canvas.getContext('2d');
+
+    const W = canvas.width;
+    const H = canvas.height;
+
+    const PADDLE_W = 12;
+    const PADDLE_H = 80;
+    const BALL_SIZE = 10;
+    const PADDLE_SPEED = 5;
+    const WIN_SCORE = 7;
+
+    // Game state
+    let state = 'waiting'; // 'waiting' | 'playing' | 'scored' | 'won'
+    let winner = '';
+
+    const ball = {
+      x: W / 2,
+      y: H / 2,
+      vx: 0,
+      vy: 0,
+      speed: 5,
+    };
+
+    const paddles = {
+      left: { x: 20, y: H / 2 - PADDLE_H / 2, score: 0, up: false, down: false },
+      right: { x: W - 20 - PADDLE_W, y: H / 2 - PADDLE_H / 2, score: 0 },
+    };
+
+    function resetBall(direction = 1) {
+      ball.x = W / 2;
+      ball.y = H / 2;
+      ball.speed = 5;
+      const angle = (Math.random() * Math.PI) / 3 - Math.PI / 6; // ±30°
+      ball.vx = direction * ball.speed * Math.cos(angle);
+      ball.vy = ball.speed * Math.sin(angle);
+    }
+
+    function clampPaddle(paddle) {
+      if (paddle.y < 0) paddle.y = 0;
+      if (paddle.y + PADDLE_H > H) paddle.y = H - PADDLE_H;
+    }
+
+    function updatePaddles() {
+      // Left paddle — keyboard controlled
+      const lp = paddles.left;
+      if (lp.up) lp.y -= PADDLE_SPEED;
+      if (lp.down) lp.y += PADDLE_SPEED;
+      clampPaddle(lp);
+
+      // Right paddle — simple AI tracks ball with slight lag
+      const rp = paddles.right;
+      const center = rp.y + PADDLE_H / 2;
+      const diff = ball.y - center;
+      const aiSpeed = Math.min(Math.abs(diff), PADDLE_SPEED * 0.85);
+      if (Math.abs(diff) > 4) rp.y += diff > 0 ? aiSpeed : -aiSpeed;
+      clampPaddle(rp);
+    }
+
+    function updateBall() {
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+
+      // Top / bottom wall bounce
+      if (ball.y - BALL_SIZE / 2 <= 0) {
+        ball.y = BALL_SIZE / 2;
+        ball.vy = Math.abs(ball.vy);
+      }
+      if (ball.y + BALL_SIZE / 2 >= H) {
+        ball.y = H - BALL_SIZE / 2;
+        ball.vy = -Math.abs(ball.vy);
+      }
+
+      // Paddle collision helper
+      function hitPaddle(paddle) {
+        return (
+          ball.x - BALL_SIZE / 2 < paddle.x + PADDLE_W &&
+          ball.x + BALL_SIZE / 2 > paddle.x &&
+          ball.y - BALL_SIZE / 2 < paddle.y + PADDLE_H &&
+          ball.y + BALL_SIZE / 2 > paddle.y
+        );
+      }
+
+      // Left paddle
+      if (ball.vx < 0 && hitPaddle(paddles.left)) {
+        ball.x = paddles.left.x + PADDLE_W + BALL_SIZE / 2;
+        const relHit = (ball.y - (paddles.left.y + PADDLE_H / 2)) / (PADDLE_H / 2);
+        const bounceAngle = relHit * (Math.PI / 3);
+        ball.speed = Math.min(ball.speed + 0.3, 14);
+        ball.vx = ball.speed * Math.cos(bounceAngle);
+        ball.vy = ball.speed * Math.sin(bounceAngle);
+      }
+
+      // Right paddle
+      if (ball.vx > 0 && hitPaddle(paddles.right)) {
+        ball.x = paddles.right.x - BALL_SIZE / 2;
+        const relHit = (ball.y - (paddles.right.y + PADDLE_H / 2)) / (PADDLE_H / 2);
+        const bounceAngle = relHit * (Math.PI / 3);
+        ball.speed = Math.min(ball.speed + 0.3, 14);
+        ball.vx = -ball.speed * Math.cos(bounceAngle);
+        ball.vy = ball.speed * Math.sin(bounceAngle);
+      }
+
+      // Scoring
+      if (ball.x < 0) {
+        paddles.right.score++;
+        scored(paddles.right.score >= WIN_SCORE ? 'right' : null, 1);
+      } else if (ball.x > W) {
+        paddles.left.score++;
+        scored(paddles.left.score >= WIN_SCORE ? 'left' : null, -1);
+      }
+    }
+
+    function scored(wonSide, nextDir) {
+      if (wonSide) {
+        state = 'won';
+        winner = wonSide === 'left' ? 'Player' : 'AI';
+      } else {
+        state = 'scored';
+        setTimeout(() => {
+          resetBall(nextDir);
+          state = 'playing';
+        }, 800);
+      }
+    }
+
+    // Drawing helpers
+    function drawRect(x, y, w, h, color = '#fff') {
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y, w, h);
+    }
+
+    function drawText(text, x, y, size = 32, color = '#fff', align = 'center') {
+      ctx.fillStyle = color;
+      ctx.font = `bold ${size}px 'Courier New', monospace`;
+      ctx.textAlign = align;
+      ctx.fillText(text, x, y);
+    }
+
+    function drawDivider() {
+      ctx.setLineDash([10, 14]);
+      ctx.strokeStyle = '#444';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(W / 2, 0);
+      ctx.lineTo(W / 2, H);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    function draw() {
+      // Background
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+
+      drawDivider();
+
+      // Scores
+      drawText(paddles.left.score, W / 4, 60, 48);
+      drawText(paddles.right.score, (3 * W) / 4, 60, 48);
+
+      // Labels
+      drawText('PLAYER', W / 4, 22, 13, '#555');
+      drawText('AI', (3 * W) / 4, 22, 13, '#555');
+
+      // Paddles
+      drawRect(paddles.left.x, paddles.left.y, PADDLE_W, PADDLE_H);
+      drawRect(paddles.right.x, paddles.right.y, PADDLE_W, PADDLE_H);
+
+      // Ball
+      if (state !== 'waiting') {
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, BALL_SIZE / 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Overlays
+      if (state === 'waiting') {
+        drawText('PONG', W / 2, H / 2 - 30, 64);
+        drawText('Press SPACE to start', W / 2, H / 2 + 20, 18, '#aaa');
+      }
+
+      if (state === 'won') {
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(0, 0, W, H);
+        drawText(`${winner} wins!`, W / 2, H / 2 - 20, 54);
+        drawText('Press SPACE to play again', W / 2, H / 2 + 36, 18, '#aaa');
+      }
+    }
+
+    function gameLoop() {
+      if (state === 'playing') {
+        updatePaddles();
+        updateBall();
+      }
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function startGame() {
+      paddles.left.score = 0;
+      paddles.right.score = 0;
+      paddles.left.y = H / 2 - PADDLE_H / 2;
+      paddles.right.y = H / 2 - PADDLE_H / 2;
+      resetBall(Math.random() < 0.5 ? 1 : -1);
+      state = 'playing';
+    }
+
+    // Input
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (state === 'waiting' || state === 'won') startGame();
+      }
+      if (e.code === 'KeyW' || e.code === 'ArrowUp') { e.preventDefault(); paddles.left.up = true; }
+      if (e.code === 'KeyS' || e.code === 'ArrowDown') { e.preventDefault(); paddles.left.down = true; }
+    });
+
+    document.addEventListener('keyup', (e) => {
+      if (e.code === 'KeyW' || e.code === 'ArrowUp') paddles.left.up = false;
+      if (e.code === 'KeyS' || e.code === 'ArrowDown') paddles.left.down = false;
+    });
+
+    gameLoop();
+  </script>
+</body>
+</html>
