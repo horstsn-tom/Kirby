@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pong</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: 'Courier New', monospace;
+      color: #fff;
+    }
+    canvas {
+      border: 2px solid #fff;
+      display: block;
+    }
+    #ui {
+      margin-top: 12px;
+      font-size: 14px;
+      color: #aaa;
+      text-align: center;
+    }
+    #message {
+      margin-top: 6px;
+      font-size: 18px;
+      color: #fff;
+      min-height: 24px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="pong" width="800" height="500"></canvas>
+  <div id="message"></div>
+  <div id="ui">
+    W/S — Left Paddle &nbsp;|&nbsp; ↑/↓ — Right Paddle &nbsp;|&nbsp; SPACE — Start / Pause
+  </div>
+
+  <script>
+    const canvas = document.getElementById('pong');
+    const ctx = canvas.getContext('2d');
+    const messageEl = document.getElementById('message');
+
+    const W = canvas.width;
+    const H = canvas.height;
+
+    const PADDLE_W = 12;
+    const PADDLE_H = 90;
+    const BALL_SIZE = 10;
+    const PADDLE_SPEED = 6;
+    const WIN_SCORE = 7;
+
+    const state = {
+      running: false,
+      over: false,
+      scores: [0, 0],
+    };
+
+    const paddles = [
+      { x: 20,          y: H / 2 - PADDLE_H / 2, dy: 0 },
+      { x: W - 20 - PADDLE_W, y: H / 2 - PADDLE_H / 2, dy: 0 },
+    ];
+
+    const ball = { x: 0, y: 0, vx: 0, vy: 0 };
+
+    const keys = {};
+    document.addEventListener('keydown', e => {
+      keys[e.code] = true;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (state.over) {
+          resetGame();
+        } else {
+          state.running = !state.running;
+          updateMessage();
+        }
+      }
+    });
+    document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+    function resetBall(direction = 1) {
+      ball.x = W / 2;
+      ball.y = H / 2;
+      const angle = (Math.random() * 0.6 - 0.3); // -0.3 to 0.3 radians
+      const speed = 5;
+      ball.vx = direction * speed * Math.cos(angle);
+      ball.vy = speed * Math.sin(angle);
+    }
+
+    function resetGame() {
+      state.scores = [0, 0];
+      state.over = false;
+      state.running = false;
+      paddles[0].y = H / 2 - PADDLE_H / 2;
+      paddles[1].y = H / 2 - PADDLE_H / 2;
+      resetBall(1);
+      updateMessage();
+    }
+
+    function updateMessage() {
+      if (state.over) {
+        messageEl.textContent = `Player ${state.scores[0] >= WIN_SCORE ? 1 : 2} wins! Press SPACE to restart.`;
+      } else if (!state.running) {
+        messageEl.textContent = 'Press SPACE to start';
+      } else {
+        messageEl.textContent = '';
+      }
+    }
+
+    function update() {
+      if (!state.running || state.over) return;
+
+      // Paddle input
+      if (keys['KeyW'])       paddles[0].dy = -PADDLE_SPEED;
+      else if (keys['KeyS'])  paddles[0].dy =  PADDLE_SPEED;
+      else                    paddles[0].dy = 0;
+
+      if (keys['ArrowUp'])    paddles[1].dy = -PADDLE_SPEED;
+      else if (keys['ArrowDown']) paddles[1].dy = PADDLE_SPEED;
+      else                    paddles[1].dy = 0;
+
+      // Move paddles
+      for (const p of paddles) {
+        p.y += p.dy;
+        p.y = Math.max(0, Math.min(H - PADDLE_H, p.y));
+      }
+
+      // Move ball
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+
+      // Top / bottom bounce
+      if (ball.y <= 0) {
+        ball.y = 0;
+        ball.vy = Math.abs(ball.vy);
+      } else if (ball.y + BALL_SIZE >= H) {
+        ball.y = H - BALL_SIZE;
+        ball.vy = -Math.abs(ball.vy);
+      }
+
+      // Paddle collisions
+      for (let i = 0; i < 2; i++) {
+        const p = paddles[i];
+        if (
+          ball.x < p.x + PADDLE_W &&
+          ball.x + BALL_SIZE > p.x &&
+          ball.y < p.y + PADDLE_H &&
+          ball.y + BALL_SIZE > p.y
+        ) {
+          // Reflect horizontally
+          ball.vx = i === 0 ? Math.abs(ball.vx) : -Math.abs(ball.vx);
+
+          // Add spin based on paddle movement
+          ball.vy += p.dy * 0.3;
+
+          // Clamp vy to avoid extreme angles
+          ball.vy = Math.max(-8, Math.min(8, ball.vy));
+
+          // Speed up slightly each hit
+          ball.vx *= 1.05;
+
+          // Nudge ball out of paddle
+          ball.x = i === 0 ? p.x + PADDLE_W : p.x - BALL_SIZE;
+        }
+      }
+
+      // Score
+      if (ball.x + BALL_SIZE < 0) {
+        state.scores[1]++;
+        checkWin() || (resetBall(-1), state.running = false, updateMessage());
+      } else if (ball.x > W) {
+        state.scores[0]++;
+        checkWin() || (resetBall(1), state.running = false, updateMessage());
+      }
+    }
+
+    function checkWin() {
+      if (state.scores[0] >= WIN_SCORE || state.scores[1] >= WIN_SCORE) {
+        state.over = true;
+        state.running = false;
+        updateMessage();
+        return true;
+      }
+      return false;
+    }
+
+    function draw() {
+      // Background
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+
+      // Center dashed line
+      ctx.setLineDash([10, 10]);
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(W / 2, 0);
+      ctx.lineTo(W / 2, H);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Scores
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 48px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText(state.scores[0], W / 4, 60);
+      ctx.fillText(state.scores[1], 3 * W / 4, 60);
+
+      // Win indicator bars
+      ctx.fillStyle = '#222';
+      for (let i = 0; i < WIN_SCORE; i++) {
+        ctx.fillRect(W / 4 - (WIN_SCORE * 14) / 2 + i * 14, 70, 10, 5);
+        ctx.fillRect(3 * W / 4 - (WIN_SCORE * 14) / 2 + i * 14, 70, 10, 5);
+      }
+      ctx.fillStyle = '#0f0';
+      for (let i = 0; i < state.scores[0]; i++) {
+        ctx.fillRect(W / 4 - (WIN_SCORE * 14) / 2 + i * 14, 70, 10, 5);
+      }
+      ctx.fillStyle = '#0f0';
+      for (let i = 0; i < state.scores[1]; i++) {
+        ctx.fillRect(3 * W / 4 - (WIN_SCORE * 14) / 2 + i * 14, 70, 10, 5);
+      }
+
+      // Paddles
+      ctx.fillStyle = '#fff';
+      for (const p of paddles) {
+        ctx.beginPath();
+        ctx.roundRect(p.x, p.y, PADDLE_W, PADDLE_H, 4);
+        ctx.fill();
+      }
+
+      // Ball
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.roundRect(ball.x, ball.y, BALL_SIZE, BALL_SIZE, 2);
+      ctx.fill();
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    resetGame();
+    loop();
+  </script>
+</body>
+</html>
