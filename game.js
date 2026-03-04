@@ -90,7 +90,7 @@ function buildLevel() {
     const count = Math.floor(p.w / 18);
     const startX = p.x + (p.w - count * 18) / 2;
     for (let j = 0; j < count; j++) {
-      spikes.push({ x: startX + j * 18 + 3, y: p.y - 14, w: 12, h: 14, platY: p.y });
+      spikes.push({ x: startX + j * 18 + 3, y: p.y - 24, w: 12, h: 24, platY: p.y });
     }
   });
 
@@ -100,7 +100,7 @@ function buildLevel() {
     { x: 600, count: 3 },
   ].forEach(({ x, count }) => {
     for (let j = 0; j < count; j++) {
-      spikes.push({ x: x + j * 18, y: H - 54, w: 12, h: 14, platY: H - 40 });
+      spikes.push({ x: x + j * 18, y: H - 64, w: 12, h: 24, platY: H - 40 });
     }
   });
 
@@ -144,6 +144,7 @@ function makePlayer() {
     facingRight: true,
     jumpBuffer: 0,
     coyoteTime: 0,
+    jumpsLeft: 1,
     animTimer: 0,
     squishY: 1, squishX: 1,
     dead: false,
@@ -269,8 +270,8 @@ function update(ts) {
   p.vy = Math.min(p.vy + GRAVITY * dt, MAX_FALL);
 
   // Coyote time & jump buffer
-  if (p.onGround) p.coyoteTime = 8;
-  else            p.coyoteTime = Math.max(0, p.coyoteTime - dt);
+  if (p.onGround) { p.coyoteTime = 8; p.jumpsLeft = 1; }
+  else            { p.coyoteTime = Math.max(0, p.coyoteTime - dt); }
 
   if (jump) p.jumpBuffer = 8;
   else      p.jumpBuffer = Math.max(0, p.jumpBuffer - dt);
@@ -281,6 +282,12 @@ function update(ts) {
     p.coyoteTime = 0;
     p.squishY = 1.4;
     p.squishX = 0.7;
+  } else if (p.jumpBuffer > 0 && p.jumpsLeft > 0) {
+    p.vy = JUMP_FORCE * 0.85;
+    p.jumpBuffer = 0;
+    p.jumpsLeft = 0;
+    p.squishY = 1.3;
+    p.squishX = 0.75;
   }
 
   // Variable jump height — release to fall faster
@@ -329,8 +336,8 @@ function update(ts) {
 
   // ── Spike collisions ──
   level.spikes.forEach(s => {
-    // Shrink hitbox slightly for fairness
-    const sh = { x: s.x + 2, y: s.y + 2, w: s.w - 4, h: s.h - 2 };
+    // Hitbox matches trunk only (x+3, width 5)
+    const sh = { x: s.x + 3, y: s.y + 2, w: 5, h: s.h - 2 };
     if (rectOverlap(p, sh)) die();
   });
 
@@ -404,22 +411,31 @@ function drawPlatform(plat) {
   ctx.globalAlpha = 1;
 }
 
-function drawSpike(s) {
-  const x = s.x - camera.x;
-  const y = s.y;
+function drawCactus(s) {
+  const x = Math.round(s.x - camera.x);
+  const y = Math.round(s.y);
+  const h = s.h;  // 24
 
-  // Glow
   ctx.save();
-  ctx.shadowColor = COLOR.spikeGlow;
-  ctx.shadowBlur = 8;
+  ctx.shadowColor = '#4dcc4d';
+  ctx.shadowBlur = 6;
+  ctx.fillStyle = '#2d8a2d';
 
-  ctx.fillStyle = COLOR.spike;
-  ctx.beginPath();
-  ctx.moveTo(x,           y + s.h);
-  ctx.lineTo(x + s.w / 2, y);
-  ctx.lineTo(x + s.w,     y + s.h);
-  ctx.closePath();
-  ctx.fill();
+  // Trunk
+  ctx.fillRect(x + 3, y, 5, h);
+
+  // Left arm: horizontal then vertical up
+  ctx.fillRect(x,     y + 8, 6, 4);
+  ctx.fillRect(x,     y + 3, 4, 5);
+
+  // Right arm: horizontal then vertical up
+  ctx.fillRect(x + 7, y + 12, 5, 4);
+  ctx.fillRect(x + 8, y + 8,  4, 4);
+
+  // Trunk highlight
+  ctx.fillStyle = '#4dcc4d';
+  ctx.fillRect(x + 4, y + 1, 2, h - 2);
+
   ctx.restore();
 }
 
@@ -427,24 +443,63 @@ function drawEnemy(e) {
   const x = Math.round(e.x - camera.x);
   const y = Math.round(e.y);
   const bounce = Math.sin(e.animTimer * 0.15) * 2;
+  const sw = e.w;
+  const sh = e.h;
 
   ctx.save();
-  ctx.translate(x + e.w / 2, y + e.h / 2 + bounce);
+  ctx.translate(x + sw / 2, y + sh / 2 + bounce);
   if (!e.dir || e.dir === -1) ctx.scale(-1, 1);
+
+  ctx.shadowColor = COLOR.enemy;
+  ctx.shadowBlur = 8;
+
+  // Tail (stiff, horizontal)
+  ctx.fillStyle = '#c07800';
+  ctx.beginPath();
+  ctx.moveTo(-sw * 0.3,  sh * 0.02);
+  ctx.lineTo(-sw * 0.92, -sh * 0.08);
+  ctx.lineTo(-sw * 0.3,  sh * 0.26);
+  ctx.closePath();
+  ctx.fill();
 
   // Body
   ctx.fillStyle = COLOR.enemy;
-  ctx.fillRect(-e.w / 2, -e.h / 2, e.w, e.h);
+  ctx.fillRect(-sw * 0.3, -sh * 0.2, sw * 0.6, sh * 0.5);
 
-  // Eyes
-  ctx.fillStyle = COLOR.enemyEye;
-  ctx.fillRect(2,  -e.h / 2 + 4, 5, 5);
+  // Neck
+  ctx.fillRect(-sw * 0.05, -sh * 0.38, sw * 0.35, sh * 0.22);
 
-  // Feet animation
-  const legOff = Math.sin(e.animTimer * 0.3) * 3;
+  // Head (raptor — elongated and low)
+  ctx.fillRect(sw * 0.05, -sh * 0.5, sw * 0.58, sh * 0.28);
+
+  // Snout (long, pointed)
   ctx.fillStyle = '#c07800';
-  ctx.fillRect(-e.w / 2,      e.h / 2 - 5 + legOff,  6, 5);
-  ctx.fillRect( e.w / 2 - 6,  e.h / 2 - 5 - legOff,  6, 5);
+  ctx.fillRect(sw * 0.32, -sh * 0.34, sw * 0.4, sh * 0.12);
+
+  // Teeth
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(sw * 0.38, -sh * 0.24, 3, 3);
+  ctx.fillRect(sw * 0.48, -sh * 0.24, 3, 3);
+
+  // Eye (red and menacing)
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(sw * 0.12, -sh * 0.46, 5, 5);
+  ctx.fillStyle = '#cc0000';
+  ctx.fillRect(sw * 0.16, -sh * 0.42, 3, 3);
+
+  // Sickle arm / claw
+  ctx.fillStyle = '#c07800';
+  ctx.fillRect(sw * 0.18, -sh * 0.02, sw * 0.16, sh * 0.14);
+  ctx.fillRect(sw * 0.3,  sh * 0.1,   sw * 0.08, sh * 0.06);
+
+  // Legs (animated)
+  const legOff = Math.sin(e.animTimer * 0.3) * 3;
+  ctx.fillStyle = '#a06000';
+  ctx.fillRect(-sw * 0.05, sh * 0.28 - legOff, sw * 0.22, sh * 0.2);
+  ctx.fillRect(-sw * 0.05, sh * 0.46,           sw * 0.28, sh * 0.06);
+  ctx.fillRect( sw * 0.12, sh * 0.28 + legOff,  sw * 0.22, sh * 0.2);
+  ctx.fillRect( sw * 0.12, sh * 0.46,            sw * 0.28, sh * 0.06);
 
   ctx.restore();
 }
@@ -697,8 +752,8 @@ function loop(ts) {
   level.platforms.forEach(drawPlatform);
   // Coins
   level.coins.forEach(drawCoin);
-  // Spikes
-  level.spikes.forEach(drawSpike);
+  // Cacti
+  level.spikes.forEach(drawCactus);
   // Enemies
   level.enemies.forEach(drawEnemy);
   // Finish flag
