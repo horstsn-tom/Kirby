@@ -53,67 +53,102 @@ function buildLevel() {
   const enemies   = [];
   const coins     = [];
 
-  // Ground floor (very wide)
-  platforms.push({ x: -200, y: H - 40, w: 600, h: 40, deadly: false });
+  // ── Ground sections (with pits between) ──
+  platforms.push({ x: -200,  y: H - 40, w: 600,  h: 40, deadly: false });
+  platforms.push({ x: 500,   y: H - 40, w: 300,  h: 40, deadly: false });
+  platforms.push({ x: 900,   y: H - 40, w: 500,  h: 40, deadly: false });
+  platforms.push({ x: 1600,  y: H - 40, w: 500,  h: 40, deadly: false });
+  platforms.push({ x: 2300,  y: H - 40, w: 500,  h: 40, deadly: false });
+  platforms.push({ x: 3000,  y: H - 40, w: 400,  h: 40, deadly: false });
+  platforms.push({ x: 3600,  y: H - 40, w: 400,  h: 40, deadly: false });
+  platforms.push({ x: 4200,  y: H - 40, w: 400,  h: 40, deadly: false });
+  platforms.push({ x: 4800,  y: H - 40, w: 700,  h: 40, deadly: false });
 
-  // Pit then continue
-  platforms.push({ x: 500, y: H - 40, w: 300, h: 40, deadly: false });
-  platforms.push({ x: 900, y: H - 40, w: 500, h: 40, deadly: false });
-
-  // Floating platforms — hand-crafted course
+  // ── Floating platforms — difficulty scales each section ──
+  // sec 1=easy, sec 8=hardest
   const fp = [
-    { x: 150,  y: 310, w: 100 },
-    { x: 320,  y: 240, w: 90  },
-    { x: 500,  y: 170, w: 110 },
-    { x: 680,  y: 250, w: 80  },
-    { x: 820,  y: 310, w: 100 },
-    { x: 980,  y: 220, w: 120 },
-    { x: 1160, y: 155, w: 90  },
-    { x: 1320, y: 240, w: 80  },
-    { x: 1470, y: 300, w: 120 },
-    { x: 1660, y: 200, w: 100 },
-    { x: 1830, y: 130, w: 110 },
-    { x: 2020, y: 220, w: 80  },
-    { x: 2180, y: 290, w: 120 },
-    { x: 2380, y: 170, w: 100 },
-    { x: 2560, y: 240, w: 90  },
-    { x: 2730, y: 310, w: 80  },
+    // Section 1 — wide, slow enemies (x 100–900)
+    { x: 150,  y: 310, w: 110, sec: 1 },
+    { x: 330,  y: 245, w: 95,  sec: 1 },
+    { x: 510,  y: 175, w: 115, sec: 1 },
+    { x: 700,  y: 255, w: 85,  sec: 1 },
+    { x: 850,  y: 315, w: 100, sec: 1 },
+    // Section 2 — slightly tighter (x 980–1580)
+    { x: 990,  y: 225, w: 100, sec: 2 },
+    { x: 1170, y: 160, w: 90,  sec: 2 },
+    { x: 1330, y: 245, w: 85,  sec: 2 },
+    { x: 1480, y: 305, w: 100, sec: 2 },
+    // Section 3 — narrower, faster (x 1620–2270)
+    { x: 1670, y: 205, w: 90,  sec: 3 },
+    { x: 1840, y: 135, w: 100, sec: 3 },
+    { x: 2030, y: 225, w: 80,  sec: 3 },
+    { x: 2190, y: 295, w: 90,  sec: 3 },
+    // Section 4 — harder (x 2330–2980)
+    { x: 2350, y: 175, w: 80,  sec: 4 },
+    { x: 2530, y: 245, w: 75,  sec: 4 },
+    { x: 2700, y: 315, w: 80,  sec: 4 },
+    { x: 2870, y: 190, w: 80,  sec: 4 },
+    // Section 5 — tough (x 3040–3570)
+    { x: 3050, y: 210, w: 75,  sec: 5 },
+    { x: 3210, y: 145, w: 70,  sec: 5 },
+    { x: 3360, y: 225, w: 70,  sec: 5 },
+    { x: 3510, y: 290, w: 70,  sec: 5 },
+    // Section 6 — hard (x 3640–4170)
+    { x: 3660, y: 190, w: 70,  sec: 6 },
+    { x: 3810, y: 130, w: 65,  sec: 6 },
+    { x: 3960, y: 215, w: 70,  sec: 6 },
+    { x: 4110, y: 290, w: 70,  sec: 6 },
+    // Section 7 — very hard (x 4240–4770)
+    { x: 4250, y: 200, w: 65,  sec: 7 },
+    { x: 4390, y: 135, w: 65,  sec: 7 },
+    { x: 4530, y: 215, w: 60,  sec: 7 },
+    { x: 4670, y: 285, w: 65,  sec: 7 },
+    // Section 8 — hardest (x 4840–5430)
+    { x: 4860, y: 190, w: 65,  sec: 8 },
+    { x: 5000, y: 125, w: 60,  sec: 8 },
+    { x: 5145, y: 205, w: 65,  sec: 8 },
+    { x: 5290, y: 280, w: 60,  sec: 8 },
+    { x: 5400, y: 175, w: 70,  sec: 8 },
   ];
 
   fp.forEach(p => platforms.push({ x: p.x, y: p.y, w: p.w, h: 18, deadly: false }));
 
-  // Spikes on some platforms
-  // One cactus per platform, centred
-  const spikyPlatIdx = [1, 3, 5, 7, 9, 11, 13];
-  spikyPlatIdx.forEach(i => {
+  // ── Spikes — every other platform; double spikes in sections 6–8 ──
+  [1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33].forEach(i => {
     const p = fp[i];
     if (!p) return;
-    spikes.push({ x: p.x + Math.floor(p.w / 2) - 6, y: p.y - 24, w: 12, h: 24, platY: p.y });
+    if (p.sec >= 6) {
+      spikes.push({ x: p.x + 8,        y: p.y - 24, w: 12, h: 24, platY: p.y });
+      spikes.push({ x: p.x + p.w - 20, y: p.y - 24, w: 12, h: 24, platY: p.y });
+    } else {
+      spikes.push({ x: p.x + Math.floor(p.w / 2) - 6, y: p.y - 24, w: 12, h: 24, platY: p.y });
+    }
   });
 
-  // Ground cacti (well-spaced)
-  [440, 480, 640].forEach(x => {
+  // Ground cacti
+  [440, 480, 640, 1700, 1750, 2400, 2450, 3100, 3150, 3700, 3750, 4300, 4350, 4900, 4950].forEach(x => {
     spikes.push({ x, y: H - 64, w: 12, h: 24, platY: H - 40 });
   });
 
-  // Enemies on some platforms
-  const enemyPlatIdx = [0, 2, 4, 6, 8, 10, 12, 14];
-  enemyPlatIdx.forEach(i => {
+  // ── Enemies — speed scales with section ──
+  const speedBySec = { 1: 0.8, 2: 1.05, 3: 1.35, 4: 1.65, 5: 2.0, 6: 2.35, 7: 2.75, 8: 3.2 };
+  [0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32].forEach(i => {
     const p = fp[i];
     if (!p) return;
+    const base = speedBySec[p.sec] || 0.8;
     enemies.push({
       x: p.x + p.w / 2 - 10,
       y: p.y - 22,
       w: 20, h: 22,
       dir: 1,
-      speed: 0.8 + Math.random() * 0.5,
+      speed: base + Math.random() * 0.35,
       minX: p.x + 5,
       maxX: p.x + p.w - 25,
       animTimer: 0,
     });
   });
 
-  // Coins
+  // ── Coins — every other platform ──
   fp.forEach((p, i) => {
     if (i % 2 === 0) {
       coins.push({ x: p.x + p.w / 2 - 8, y: p.y - 36, w: 16, h: 16, collected: false, animT: Math.random() * Math.PI * 2 });
@@ -121,7 +156,7 @@ function buildLevel() {
   });
 
   // Finish flag platform
-  platforms.push({ x: 2800, y: H - 40, w: 200, h: 40, deadly: false });
+  platforms.push({ x: 5500, y: H - 40, w: 200, h: 40, deadly: false });
 
   return { platforms, spikes, enemies, coins };
 }
@@ -159,7 +194,7 @@ let nextBossScore;
 let savedCameraX;
 let bossCount;
 let checkpointX, checkpointY, checkpointCamX;
-let nextCheckpointScore;
+let checkpointFlags;
 let checkpointMsg;
 
 function initGame() {
@@ -172,11 +207,16 @@ function initGame() {
   nextBossScore     = 500;
   savedCameraX      = 0;
   bossCount         = 0;
-  checkpointX       = 80;
-  checkpointY       = H - 90;
-  checkpointCamX    = 0;
-  nextCheckpointScore = 250;
-  checkpointMsg     = 0;
+  checkpointX    = 80;
+  checkpointY    = H - 90;
+  checkpointCamX = 0;
+  checkpointFlags = [
+    { x: 1100, activated: false },
+    { x: 2500, activated: false },
+    { x: 3900, activated: false },
+    { x: 5100, activated: false },
+  ];
+  checkpointMsg  = 0;
   gamePhase         = 'playing';
   deathFlash        = 0;
 }
@@ -394,20 +434,22 @@ function update(ts) {
   if (p.x < 0) { p.x = 0; p.vx = 0; }
 
   // ── Win condition ──
-  if (p.x > 2850) {
+  if (p.x > 5500) {
     gamePhase = 'win';
     if (score > bestScore) bestScore = score;
   }
 
   // ── Checkpoint save ──
-  if (score >= nextCheckpointScore) {
-    checkpointX         = p.x;
-    checkpointY         = p.y;
-    checkpointCamX      = camera.x;
-    nextCheckpointScore += 250;
-    checkpointMsg       = 120;
-    lives               = 3;
-  }
+  checkpointFlags.forEach(cp => {
+    if (!cp.activated && p.x > cp.x) {
+      cp.activated   = true;
+      checkpointX    = p.x;
+      checkpointY    = p.y;
+      checkpointCamX = camera.x;
+      checkpointMsg  = 120;
+      lives          = 3;
+    }
+  });
 
   // ── Boss fight trigger ──
   if (score >= nextBossScore) {
@@ -1005,8 +1047,40 @@ function drawWinScreen() {
   if (pressing('Space', 'Enter')) initGame();
 }
 
+function drawCheckpointFlag(cp) {
+  const x = cp.x - camera.x;
+  if (x < -20 || x > W + 20) return;
+  const y = H - 185;
+
+  // Pole
+  ctx.fillStyle = cp.activated ? '#00d4aa' : '#aaa';
+  ctx.fillRect(x, y, 4, 145);
+
+  // Flag
+  const wave = Math.sin(Date.now() * 0.004) * 5;
+  ctx.fillStyle = cp.activated ? '#00d4aa' : '#ffd700';
+  ctx.shadowColor = cp.activated ? '#00d4aa' : '#ffd700';
+  ctx.shadowBlur = cp.activated ? 10 : 5;
+  ctx.beginPath();
+  ctx.moveTo(x + 4, y);
+  ctx.lineTo(x + 34 + wave, y + 12);
+  ctx.lineTo(x + 4, y + 24);
+  ctx.closePath();
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  if (cp.activated) {
+    ctx.save();
+    ctx.font = 'bold 9px "Courier New"';
+    ctx.fillStyle = '#1a1a2e';
+    ctx.textAlign = 'center';
+    ctx.fillText('✓', x + 18, y + 16);
+    ctx.restore();
+  }
+}
+
 function drawFinishFlag() {
-  const x = 2860 - camera.x;
+  const x = 5510 - camera.x;
   const y = H - 180;
   if (x < -20 || x > W + 20) return;
 
@@ -1046,6 +1120,7 @@ function loop(ts) {
     level.coins.forEach(drawCoin);
     level.spikes.forEach(drawCactus);
     level.enemies.forEach(drawEnemy);
+    checkpointFlags.forEach(drawCheckpointFlag);
     drawFinishFlag();
     drawPlayer(state);
     ctx.restore();
