@@ -168,7 +168,22 @@ function buildLevel() {
   // Finish flag platform
   platforms.push({ x: 5500, y: H - 40, w: 200, h: 40, deadly: false });
 
-  return { platforms, spikes, enemies, coins };
+  // ── Power-ups — placed on ground sections throughout the level ──
+  const G = H - 70; // ground pickup height
+  const powerups = [
+    { x: 680,  y: G, w: 22, h: 22, type: 'heart',  collected: false, animT: 0 },
+    { x: 1150, y: G, w: 22, h: 22, type: 'speed',  collected: false, animT: 0 },
+    { x: 1800, y: G, w: 22, h: 22, type: 'jump',   collected: false, animT: 0 },
+    { x: 2450, y: G, w: 22, h: 22, type: 'shield', collected: false, animT: 0 },
+    { x: 3150, y: G, w: 22, h: 22, type: 'heart',  collected: false, animT: 0 },
+    { x: 3750, y: G, w: 22, h: 22, type: 'speed',  collected: false, animT: 0 },
+    { x: 4350, y: G, w: 22, h: 22, type: 'shield', collected: false, animT: 0 },
+    { x: 4870, y: G, w: 22, h: 22, type: 'jump',   collected: false, animT: 0 },
+    { x: 5050, y: G, w: 22, h: 22, type: 'heart',  collected: false, animT: 0 },
+    { x: 5250, y: G, w: 22, h: 22, type: 'speed',  collected: false, animT: 0 },
+  ];
+
+  return { platforms, spikes, enemies, coins, powerups };
 }
 
 // ─── Player factory ──────────────────────────────────────────────────────────
@@ -187,6 +202,9 @@ function makePlayer() {
     squishY: 1, squishX: 1,
     dead: false,
     deathTimer: 0,
+    speedBoost: 0,     // frames remaining
+    jumpBoost: 0,      // frames remaining
+    shieldActive: false,
   };
 }
 
@@ -206,6 +224,8 @@ let bossCount;
 let checkpointX, checkpointY, checkpointCamX;
 let checkpointFlags;
 let checkpointMsg;
+let powerupMsg;
+let powerupMsgType;
 
 function initGame() {
   level          = buildLevel();
@@ -227,6 +247,8 @@ function initGame() {
     { x: 5100, activated: false },
   ];
   checkpointMsg  = 0;
+  powerupMsg     = 0;
+  powerupMsgType = '';
   gamePhase         = 'menu';
   deathFlash        = 0;
 }
@@ -294,6 +316,7 @@ function update(ts) {
 
   deathFlash    = Math.max(0, deathFlash - dt * 0.05);
   checkpointMsg = Math.max(0, checkpointMsg - dt);
+  powerupMsg    = Math.max(0, powerupMsg - dt);
 
   if (gamePhase === 'dead') {
     state.deathTimer -= dt;
@@ -326,6 +349,13 @@ function update(ts) {
   const p = state;
   p.animTimer += dt;
 
+  // Tick powerup timers
+  if (p.speedBoost > 0) p.speedBoost -= dt;
+  if (p.jumpBoost  > 0) p.jumpBoost  -= dt;
+
+  const curSpeed = MOVE_SPEED * (p.speedBoost > 0 ? 1.75 : 1);
+  const curJump  = JUMP_FORCE * (p.jumpBoost  > 0 ? 1.28 : 1);
+
   // ── Input ──
   const left  = pressing('ArrowLeft',  'KeyA');
   const right = pressing('ArrowRight', 'KeyD');
@@ -335,7 +365,7 @@ function update(ts) {
   if (right) { p.vx += 1.2 * dt; p.facingRight = true;  }
 
   // Clamp horizontal speed
-  p.vx = Math.max(-MOVE_SPEED, Math.min(MOVE_SPEED, p.vx));
+  p.vx = Math.max(-curSpeed, Math.min(curSpeed, p.vx));
 
   // Friction when no key pressed
   if (!left && !right) p.vx *= Math.pow(FRICTION, dt);
@@ -353,13 +383,13 @@ function update(ts) {
   else            p.jumpBuffer = Math.max(0, p.jumpBuffer - dt);
 
   if (p.jumpBuffer > 0 && p.coyoteTime > 0) {
-    p.vy = JUMP_FORCE;
+    p.vy = curJump;
     p.jumpBuffer = 0;
     p.coyoteTime = 0;
     p.squishY = 1.4;
     p.squishX = 0.7;
   } else if (p.jumpBuffer > 0 && p.jumpsLeft > 0) {
-    p.vy = JUMP_FORCE * 0.85;
+    p.vy = curJump * 0.85;
     p.jumpBuffer = 0;
     p.jumpsLeft = 0;
     p.squishY = 1.3;
@@ -442,6 +472,26 @@ function update(ts) {
     c.animT += 0.05 * dt;
   });
 
+  // ── Power-up collection ──
+  level.powerups.forEach(pu => {
+    pu.animT += 0.04 * dt;
+    if (!pu.collected && rectOverlap(p, pu)) {
+      pu.collected   = true;
+      powerupMsgType = pu.type;
+      powerupMsg     = 100;
+      const DUR = 360;
+      if (pu.type === 'heart') {
+        lives = Math.min(lives + 1, 3);
+      } else if (pu.type === 'speed') {
+        p.speedBoost = DUR;
+      } else if (pu.type === 'jump') {
+        p.jumpBoost = DUR;
+      } else if (pu.type === 'shield') {
+        p.shieldActive = true;
+      }
+    }
+  });
+
   // ── Fall off world ──
   if (p.y > H + 80) die();
 
@@ -487,6 +537,11 @@ function update(ts) {
 
 function die() {
   if (gamePhase !== 'playing' && gamePhase !== 'boss') return;
+  if (state.shieldActive) {
+    state.shieldActive = false;
+    deathFlash = 0.5; // brief flash but no death
+    return;
+  }
   deathFlash = 1;
   lives -= 1;
   if (score > bestScore) bestScore = score;
@@ -968,6 +1023,92 @@ function drawPlayer(p) {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(sw * 0.22, -sh * 0.47, 2, 2);
 
+  // Shield aura
+  if (p.shieldActive) {
+    const pulse = Math.sin(p.animTimer * 0.18) * 0.3 + 0.7;
+    ctx.shadowColor = '#38bdf8';
+    ctx.shadowBlur  = 18;
+    ctx.strokeStyle = `rgba(56,189,248,${pulse})`;
+    ctx.lineWidth   = 2.5;
+    ctx.strokeRect(-sw * 0.56, -sh * 0.56, sw * 1.12, sh * 1.12);
+  }
+
+  ctx.restore();
+}
+
+function drawPowerup(pu) {
+  if (pu.collected) return;
+  const x = pu.x - camera.x + pu.w / 2;
+  const y = pu.y + pu.h / 2 + Math.sin(pu.animT) * 4;
+
+  const COLS = {
+    heart:  { fill: '#e94560', glow: '#ff6b8a' },
+    speed:  { fill: '#ffd700', glow: '#ffec80' },
+    jump:   { fill: '#22c55e', glow: '#4ade80' },
+    shield: { fill: '#38bdf8', glow: '#7dd3fc' },
+  };
+  const col = COLS[pu.type];
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.shadowColor = col.glow;
+  ctx.shadowBlur  = 14;
+
+  // Dark backing circle
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.beginPath();
+  ctx.arc(0, 0, 12, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = col.fill;
+
+  if (pu.type === 'heart') {
+    ctx.scale(0.62, 0.62);
+    ctx.beginPath();
+    ctx.moveTo(0, 5);
+    ctx.bezierCurveTo(0, 1, -6, -6, -11, -6);
+    ctx.bezierCurveTo(-16, -6, -16, 2, -11, 8);
+    ctx.lineTo(0, 17);
+    ctx.lineTo(11, 8);
+    ctx.bezierCurveTo(16, 2, 16, -6, 11, -6);
+    ctx.bezierCurveTo(6, -6, 0, 1, 0, 5);
+    ctx.fill();
+  } else if (pu.type === 'speed') {
+    // Lightning bolt
+    ctx.beginPath();
+    ctx.moveTo(3, -10);
+    ctx.lineTo(-4, 1);
+    ctx.lineTo(1,  1);
+    ctx.lineTo(-3, 10);
+    ctx.lineTo(5,  -1);
+    ctx.lineTo(0,  -1);
+    ctx.closePath();
+    ctx.fill();
+  } else if (pu.type === 'jump') {
+    // Up arrow
+    ctx.beginPath();
+    ctx.moveTo(0, -10);
+    ctx.lineTo(8,  -2);
+    ctx.lineTo(3,  -2);
+    ctx.lineTo(3,  10);
+    ctx.lineTo(-3, 10);
+    ctx.lineTo(-3, -2);
+    ctx.lineTo(-8, -2);
+    ctx.closePath();
+    ctx.fill();
+  } else if (pu.type === 'shield') {
+    // Shield
+    ctx.beginPath();
+    ctx.moveTo(0, -10);
+    ctx.lineTo(9, -5);
+    ctx.lineTo(9,  2);
+    ctx.bezierCurveTo(9, 8, 4, 11, 0, 13);
+    ctx.bezierCurveTo(-4, 11, -9, 8, -9, 2);
+    ctx.lineTo(-9, -5);
+    ctx.closePath();
+    ctx.fill();
+  }
+
   ctx.restore();
 }
 
@@ -1016,6 +1157,33 @@ function drawHUD() {
   ctx.shadowBlur  = 8;
   const heartsStr = '♥'.repeat(Math.max(0, lives)) + '♡'.repeat(Math.max(0, 3 - lives));
   ctx.fillText(heartsStr, W - 16, 32);
+
+  // Active powerup indicators
+  const COLS = { speed: '#ffd700', jump: '#22c55e', shield: '#38bdf8' };
+  const LABELS = { speed: '⚡SPEED', jump: '↑JUMP', shield: '◆SHIELD' };
+  const DUR = 360;
+  const active = [];
+  if (state && state.speedBoost  > 0) active.push({ type: 'speed',  t: state.speedBoost });
+  if (state && state.jumpBoost   > 0) active.push({ type: 'jump',   t: state.jumpBoost  });
+  if (state && state.shieldActive)    active.push({ type: 'shield', t: DUR });
+  active.forEach((ind, i) => {
+    const bx = 16 + i * 72, by = 62, bw = 66, bh = 22;
+    const c = COLS[ind.type];
+    ctx.shadowColor = c; ctx.shadowBlur = 6;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(bx, by, bw, bh);
+    // Timer bar
+    const frac = Math.min(ind.t / DUR, 1);
+    ctx.fillStyle = c; ctx.globalAlpha = 0.35;
+    ctx.fillRect(bx, by, bw * frac, bh);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = c; ctx.lineWidth = 1.2;
+    ctx.strokeRect(bx, by, bw, bh);
+    ctx.textAlign = 'left'; ctx.font = 'bold 10px "Courier New"';
+    ctx.fillStyle = c; ctx.shadowBlur = 4;
+    ctx.fillText(LABELS[ind.type], bx + 4, by + 14);
+  });
+
   ctx.restore();
 }
 
@@ -1215,6 +1383,7 @@ function loop(ts) {
     ctx.save();
     level.platforms.forEach(drawPlatform);
     level.coins.forEach(drawCoin);
+    level.powerups.forEach(drawPowerup);
     level.spikes.forEach(drawCactus);
     level.enemies.forEach(drawEnemy);
     checkpointFlags.forEach(drawCheckpointFlag);
@@ -1234,6 +1403,21 @@ function loop(ts) {
     ctx.shadowColor = '#00d4aa';
     ctx.shadowBlur = 14;
     ctx.fillText('✓ CHECKPOINT!', W / 2, H / 2 - 70);
+    ctx.restore();
+  }
+  // Powerup pickup notification
+  if (powerupMsg > 0) {
+    const PCOLS  = { heart: '#e94560', speed: '#ffd700', jump: '#22c55e', shield: '#38bdf8' };
+    const PNAMES = { heart: '+1 LIFE!', speed: 'SPEED BOOST!', jump: 'SUPER JUMP!', shield: 'SHIELD ON!' };
+    const pc = PCOLS[powerupMsgType] || '#fff';
+    ctx.save();
+    ctx.textAlign  = 'center';
+    ctx.globalAlpha = Math.min(1, powerupMsg / 25);
+    ctx.font        = 'bold 24px "Courier New"';
+    ctx.fillStyle   = pc;
+    ctx.shadowColor = pc;
+    ctx.shadowBlur  = 16;
+    ctx.fillText(PNAMES[powerupMsgType] || 'POWER UP!', W / 2, H / 2 - 100);
     ctx.restore();
   }
   if (gamePhase === 'dead')    drawDeathScreen();
