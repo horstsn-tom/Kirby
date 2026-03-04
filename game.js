@@ -13,9 +13,11 @@ const COLOR = {
   platShadow: '#2d1b69',
   spike:      '#e94560',
   spikeGlow:  '#ff6b8a',
-  player:     '#00d4aa',
+  player:     '#22c55e',
   playerEye:  '#ffffff',
-  playerFeet: '#00a07a',
+  playerFeet: '#15803d',
+  playerDark: '#16a34a',
+  playerGlow: '#4ade80',
   enemy:      '#f59e0b',
   enemyEye:   '#1a1a2e',
   star:       '#ffffff',
@@ -154,8 +156,9 @@ let state;
 let level;
 let camera;
 let score;
+let lives;
 let bestScore = 0;
-let gamePhase; // 'playing' | 'dead' | 'win'
+let gamePhase; // 'playing' | 'respawn' | 'dead' | 'win'
 let deathFlash;
 
 function initGame() {
@@ -163,6 +166,7 @@ function initGame() {
   state      = makePlayer();
   camera     = { x: 0 };
   score      = 0;
+  lives      = 3;
   gamePhase  = 'playing';
   deathFlash = 0;
 }
@@ -228,6 +232,17 @@ function update(ts) {
   if (gamePhase === 'dead') {
     state.deathTimer -= dt;
     if (state.deathTimer <= 0) initGame();
+    return;
+  }
+
+  if (gamePhase === 'respawn') {
+    state.deathTimer -= dt;
+    if (state.deathTimer <= 0) {
+      state     = makePlayer();
+      camera    = { x: 0 };
+      gamePhase = 'playing';
+      deathFlash = 0;
+    }
     return;
   }
 
@@ -348,10 +363,16 @@ function update(ts) {
 
 function die() {
   if (gamePhase !== 'playing') return;
-  gamePhase = 'dead';
-  state.deathTimer = 90;
   deathFlash = 1;
+  lives -= 1;
   if (score > bestScore) bestScore = score;
+  if (lives <= 0) {
+    gamePhase = 'dead';
+    state.deathTimer = 120;
+  } else {
+    gamePhase = 'respawn';
+    state.deathTimer = 80;
+  }
 }
 
 // ─── Draw helpers ────────────────────────────────────────────────────────────
@@ -465,26 +486,63 @@ function drawPlayer(p) {
   ctx.translate(cx, cy);
   if (!p.facingRight) ctx.scale(-1, 1);
 
-  // Body glow
-  ctx.shadowColor = COLOR.player;
+  ctx.shadowColor = COLOR.playerGlow;
   ctx.shadowBlur  = 12;
 
-  // Body
-  ctx.fillStyle = COLOR.player;
-  ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+  // Tail
+  ctx.fillStyle = COLOR.playerDark;
+  ctx.beginPath();
+  ctx.moveTo(-sw * 0.3,  sh * 0.05);
+  ctx.lineTo(-sw * 0.85, sh * 0.0);
+  ctx.lineTo(-sw * 0.3,  sh * 0.32);
+  ctx.closePath();
+  ctx.fill();
 
-  // Feet
+  // Main body
+  ctx.fillStyle = COLOR.player;
+  ctx.fillRect(-sw * 0.3, -sh * 0.22, sw * 0.65, sh * 0.58);
+
+  // Neck / shoulder hump
+  ctx.fillStyle = COLOR.player;
+  ctx.fillRect(-sw * 0.05, -sh * 0.42, sw * 0.45, sh * 0.25);
+
+  // Head
+  ctx.fillStyle = COLOR.player;
+  ctx.fillRect(sw * 0.12, -sh * 0.52, sw * 0.52, sh * 0.32);
+
+  // Lower jaw / snout
+  ctx.fillStyle = COLOR.playerDark;
+  ctx.fillRect(sw * 0.28, -sh * 0.26, sw * 0.32, sh * 0.16);
+
+  // Belly highlight
+  ctx.shadowBlur  = 0;
+  ctx.fillStyle   = COLOR.playerGlow;
+  ctx.globalAlpha = 0.4;
+  ctx.fillRect(-sw * 0.2, -sh * 0.05, sw * 0.28, sh * 0.32);
+  ctx.globalAlpha = 1;
+
+  // Tiny arm
+  ctx.fillStyle = COLOR.playerDark;
+  ctx.fillRect(sw * 0.2,  sh * 0.0,  sw * 0.2,  sh * 0.14);
+  ctx.fillRect(sw * 0.36, sh * 0.1,  sw * 0.1,  sh * 0.07);
+
+  // Legs (animated)
   const legOff = p.onGround ? Math.sin(p.animTimer * 0.25) * 3 : 0;
   ctx.fillStyle = COLOR.playerFeet;
-  ctx.fillRect(-sw / 2,       sh / 2 - 6 + legOff, sw * 0.4, 6);
-  ctx.fillRect( sw / 2 * 0.1, sh / 2 - 6 - legOff, sw * 0.4, 6);
+  // Back leg
+  ctx.fillRect(-sw * 0.05, sh * 0.32 - legOff, sw * 0.24, sh * 0.22);
+  ctx.fillRect(-sw * 0.05, sh * 0.52,           sw * 0.30, sh * 0.06);
+  // Front leg
+  ctx.fillRect( sw * 0.15, sh * 0.32 + legOff,  sw * 0.24, sh * 0.22);
+  ctx.fillRect( sw * 0.15, sh * 0.52,            sw * 0.30, sh * 0.06);
 
   // Eye
-  ctx.shadowBlur = 0;
-  ctx.fillStyle  = COLOR.playerEye;
-  ctx.fillRect(sw * 0.1, -sh * 0.2, 6, 6);
+  ctx.fillStyle = COLOR.playerEye;
+  ctx.fillRect(sw * 0.2,  -sh * 0.48, 6, 6);
   ctx.fillStyle = '#1a1a2e';
-  ctx.fillRect(sw * 0.2, -sh * 0.15, 3, 3);
+  ctx.fillRect(sw * 0.28, -sh * 0.43, 3, 3);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(sw * 0.22, -sh * 0.47, 2, 2);
 
   ctx.restore();
 }
@@ -515,7 +573,6 @@ function drawBackground() {
 }
 
 function drawHUD() {
-  // Score
   ctx.save();
   ctx.font = 'bold 20px "Courier New"';
   ctx.textAlign = 'left';
@@ -526,6 +583,15 @@ function drawHUD() {
   ctx.fillStyle = '#aaa';
   ctx.font = '14px "Courier New"';
   ctx.fillText(`BEST: ${bestScore}`, 16, 52);
+
+  // Lives hearts
+  ctx.textAlign   = 'right';
+  ctx.font        = 'bold 22px "Courier New"';
+  ctx.fillStyle   = '#e94560';
+  ctx.shadowColor = '#ff6b8a';
+  ctx.shadowBlur  = 8;
+  const heartsStr = '♥'.repeat(Math.max(0, lives)) + '♡'.repeat(Math.max(0, 3 - lives));
+  ctx.fillText(heartsStr, W - 16, 32);
   ctx.restore();
 }
 
@@ -539,12 +605,36 @@ function drawDeathScreen() {
   ctx.shadowColor = '#e94560';
   ctx.shadowBlur  = 20;
   ctx.fillStyle   = '#fff';
-  ctx.fillText('YOU DIED', W / 2, H / 2 - 20);
+  ctx.fillText('GAME OVER', W / 2, H / 2 - 20);
 
   ctx.font = '20px "Courier New"';
   ctx.shadowBlur = 6;
   ctx.fillStyle = '#ccc';
   ctx.fillText('Restarting...', W / 2, H / 2 + 24);
+  ctx.restore();
+}
+
+function drawRespawnScreen() {
+  ctx.save();
+  ctx.fillStyle = `rgba(233, 69, 96, ${deathFlash * 0.4})`;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 52px "Courier New"';
+  ctx.shadowColor = '#e94560';
+  ctx.shadowBlur  = 18;
+  ctx.fillStyle   = '#fff';
+  ctx.fillText('OUCH!', W / 2, H / 2 - 24);
+
+  ctx.font = '26px "Courier New"';
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = '#e94560';
+  ctx.fillText('♥'.repeat(Math.max(0, lives)) + '♡'.repeat(Math.max(0, 3 - lives)), W / 2, H / 2 + 20);
+
+  ctx.font = '14px "Courier New"';
+  ctx.fillStyle = '#aaa';
+  ctx.shadowBlur = 4;
+  ctx.fillText('Respawning...', W / 2, H / 2 + 52);
   ctx.restore();
 }
 
@@ -621,8 +711,9 @@ function loop(ts) {
   drawHUD();
 
   // Overlay screens
-  if (gamePhase === 'dead') drawDeathScreen();
-  if (gamePhase === 'win')  drawWinScreen();
+  if (gamePhase === 'dead')    drawDeathScreen();
+  if (gamePhase === 'respawn') drawRespawnScreen();
+  if (gamePhase === 'win')     drawWinScreen();
 }
 
 requestAnimationFrame(loop);
