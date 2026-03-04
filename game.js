@@ -157,6 +157,10 @@ let deathFlash;
 let boss;
 let nextBossScore;
 let savedCameraX;
+let bossCount;
+let checkpointX, checkpointY, checkpointCamX;
+let nextCheckpointScore;
+let checkpointMsg;
 
 function initGame() {
   level          = buildLevel();
@@ -164,11 +168,17 @@ function initGame() {
   camera         = { x: 0 };
   score          = 0;
   lives          = 3;
-  boss           = null;
-  nextBossScore  = 500;
-  savedCameraX   = 0;
-  gamePhase      = 'playing';
-  deathFlash     = 0;
+  boss              = null;
+  nextBossScore     = 500;
+  savedCameraX      = 0;
+  bossCount         = 0;
+  checkpointX       = 80;
+  checkpointY       = H - 90;
+  checkpointCamX    = 0;
+  nextCheckpointScore = 250;
+  checkpointMsg     = 0;
+  gamePhase         = 'playing';
+  deathFlash        = 0;
 }
 
 initGame();
@@ -227,7 +237,8 @@ function update(ts) {
   const dt = Math.min((ts - lastTime) / 16.67, 3); // normalized to 60fps
   lastTime = ts;
 
-  deathFlash = Math.max(0, deathFlash - dt * 0.05);
+  deathFlash    = Math.max(0, deathFlash - dt * 0.05);
+  checkpointMsg = Math.max(0, checkpointMsg - dt);
 
   if (gamePhase === 'dead') {
     state.deathTimer -= dt;
@@ -245,7 +256,9 @@ function update(ts) {
         camera.x = 0;
         gamePhase = 'boss';
       } else {
-        camera    = { x: 0 };
+        state.x  = checkpointX;
+        state.y  = checkpointY;
+        camera.x = checkpointCamX;
         gamePhase = 'playing';
       }
     }
@@ -386,11 +399,21 @@ function update(ts) {
     if (score > bestScore) bestScore = score;
   }
 
+  // ── Checkpoint save ──
+  if (score >= nextCheckpointScore) {
+    checkpointX         = p.x;
+    checkpointY         = p.y;
+    checkpointCamX      = camera.x;
+    nextCheckpointScore += 250;
+    checkpointMsg       = 120; // frames to display message
+  }
+
   // ── Boss fight trigger ──
   if (score >= nextBossScore) {
     savedCameraX  = camera.x;
     nextBossScore += 500;
-    boss          = makeBoss();
+    boss          = makeBoss(bossCount % 3);
+    bossCount    += 1;
     state.x = 80; state.y = H - 80;
     state.vx = 0; state.vy = 0;
     camera.x = 0;
@@ -419,18 +442,34 @@ function die() {
 }
 
 // ─── Boss ────────────────────────────────────────────────────────────────────
-function makeBoss() {
-  return { x: W - 160, y: H - 40 - 70, w: 60, h: 70, hp: 3, maxHp: 3,
+const BOSS_CFGS = [
+  { w: 60, h: 70, hp: 3, name: 'T-REX',      body: '#9b2335', dark: '#6b1525', glow: '#e94560', bg1: '#0d0005', bg2: '#2a000f', floor: '#3d0015', floorTop: '#6b0025' },
+  { w: 80, h: 55, hp: 4, name: 'TRICERATOPS', body: '#0891b2', dark: '#0e7490', glow: '#38bdf8', bg1: '#001520', bg2: '#002a3d', floor: '#003d55', floorTop: '#006b8a' },
+  { w: 72, h: 52, hp: 3, name: 'PTEROSAUR',   body: '#7c3aed', dark: '#5b21b6', glow: '#a78bfa', bg1: '#08001a', bg2: '#160035', floor: '#25005a', floorTop: '#4a00a0' },
+];
+
+function makeBoss(type) {
+  const c = BOSS_CFGS[type];
+  const startY = type === 2 ? H - 40 - 150 : H - 40 - c.h;
+  return { x: W - c.w - 80, y: startY, baseY: startY,
+           w: c.w, h: c.h, hp: c.hp, maxHp: c.hp, type,
            animTimer: 0, stunTimer: 0, facingRight: false };
 }
 
 function updateBoss(dt) {
   boss.animTimer += dt;
+
+  // Pterosaur bobs up and down
+  if (boss.type === 2) {
+    boss.y = boss.baseY + Math.sin(boss.animTimer * 0.04) * 65;
+  }
+
   if (boss.stunTimer > 0) {
     boss.stunTimer -= dt;
   } else {
     const dx = (state.x + state.w / 2) - (boss.x + boss.w / 2);
-    const speed = 1.2 + (boss.maxHp - boss.hp) * 0.5;
+    const baseSpd = boss.type === 1 ? 1.8 : 1.2;
+    const speed   = baseSpd + (boss.maxHp - boss.hp) * (boss.type === 1 ? 0.8 : 0.5);
     boss.x += (dx > 0 ? speed : -speed) * dt;
     boss.facingRight = dx > 0;
   }
@@ -456,25 +495,26 @@ function updateBoss(dt) {
 }
 
 function drawBossArena() {
+  const cfg = BOSS_CFGS[boss ? boss.type : 0];
   const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, '#0d0005');
-  grad.addColorStop(1, '#2a000f');
+  grad.addColorStop(0, cfg.bg1);
+  grad.addColorStop(1, cfg.bg2);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#3d0015';
+  ctx.fillStyle = cfg.floor;
   ctx.fillRect(0, H - 40, W, 40);
-  ctx.fillStyle = '#6b0025';
+  ctx.fillStyle = cfg.floorTop;
   ctx.fillRect(0, H - 40, W, 4);
-  ctx.fillStyle = '#1a000a';
+  ctx.fillStyle = cfg.bg1;
   ctx.fillRect(0, 0, 20, H);
   ctx.fillRect(W - 20, 0, 20, H);
   ctx.save();
   ctx.textAlign = 'center';
   ctx.font = 'bold 13px "Courier New"';
-  ctx.fillStyle = '#e94560';
-  ctx.shadowColor = '#e94560';
+  ctx.fillStyle = cfg.glow;
+  ctx.shadowColor = cfg.glow;
   ctx.shadowBlur = 12;
-  ctx.fillText('★ BOSS FIGHT ★', W / 2, 18);
+  ctx.fillText(`★ BOSS: ${cfg.name} ★`, W / 2, 18);
   ctx.restore();
 }
 
@@ -483,54 +523,148 @@ function drawBoss() {
   const cx = Math.round(boss.x + boss.w / 2);
   const cy = Math.round(boss.y + boss.h / 2);
   const sw = boss.w, sh = boss.h;
+  const cfg  = BOSS_CFGS[boss.type];
   const stun = boss.stunTimer > 0;
-  const body = stun ? '#ffffff' : '#9b2335';
-  const dark = stun ? '#cccccc' : '#6b1525';
+  const body = stun ? '#ffffff' : cfg.body;
+  const dark = stun ? '#cccccc' : cfg.dark;
+  const glow = stun ? '#ffffff' : cfg.glow;
 
   ctx.save();
   ctx.translate(cx, cy);
   if (!boss.facingRight) ctx.scale(-1, 1);
-  ctx.shadowColor = stun ? '#fff' : '#e94560';
+  ctx.shadowColor = glow;
   ctx.shadowBlur = 20;
 
-  // Tail
-  ctx.fillStyle = dark;
-  ctx.beginPath();
-  ctx.moveTo(-sw*0.3, sh*0.05); ctx.lineTo(-sw*0.85, sh*0.0); ctx.lineTo(-sw*0.3, sh*0.32);
-  ctx.closePath(); ctx.fill();
+  if (boss.type === 0) {
+    // ── T-Rex ──
+    ctx.fillStyle = dark;
+    ctx.beginPath();
+    ctx.moveTo(-sw*0.3, sh*0.05); ctx.lineTo(-sw*0.85, sh*0.0); ctx.lineTo(-sw*0.3, sh*0.32);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = body;
+    ctx.fillRect(-sw*0.3, -sh*0.22, sw*0.65, sh*0.58);
+    ctx.fillRect(-sw*0.05,-sh*0.42, sw*0.45, sh*0.25);
+    ctx.fillRect( sw*0.12,-sh*0.52, sw*0.52, sh*0.32);
+    ctx.fillStyle = dark;
+    ctx.fillRect( sw*0.28,-sh*0.26, sw*0.32, sh*0.16);
+    ctx.fillRect( sw*0.2,  sh*0.0,  sw*0.2,  sh*0.14);
+    ctx.fillRect( sw*0.36, sh*0.1,  sw*0.1,  sh*0.07);
+    const legOff0 = stun ? 0 : Math.sin(boss.animTimer * 0.2) * 4;
+    ctx.fillRect(-sw*0.05, sh*0.32-legOff0, sw*0.24, sh*0.22);
+    ctx.fillRect(-sw*0.05, sh*0.52,         sw*0.30, sh*0.06);
+    ctx.fillRect( sw*0.15, sh*0.32+legOff0, sw*0.24, sh*0.22);
+    ctx.fillRect( sw*0.15, sh*0.52,         sw*0.30, sh*0.06);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = stun ? '#888' : '#ffff00';
+    ctx.fillRect(sw*0.2,  -sh*0.48, 8, 8);
+    ctx.fillStyle = stun ? '#555' : '#ff0000';
+    ctx.fillRect(sw*0.25, -sh*0.44, 5, 5);
 
-  ctx.fillStyle = body;
-  ctx.fillRect(-sw*0.3, -sh*0.22, sw*0.65, sh*0.58); // body
-  ctx.fillRect(-sw*0.05,-sh*0.42, sw*0.45, sh*0.25); // neck
-  ctx.fillRect( sw*0.12,-sh*0.52, sw*0.52, sh*0.32); // head
-  ctx.fillStyle = dark;
-  ctx.fillRect( sw*0.28,-sh*0.26, sw*0.32, sh*0.16); // jaw
-  ctx.fillRect( sw*0.2,  sh*0.0,  sw*0.2,  sh*0.14); // arm
-  ctx.fillRect( sw*0.36, sh*0.1,  sw*0.1,  sh*0.07);
+  } else if (boss.type === 1) {
+    // ── Triceratops ──
+    // Short stubby tail
+    ctx.fillStyle = dark;
+    ctx.beginPath();
+    ctx.moveTo(-sw*0.48, -sh*0.1); ctx.lineTo(-sw*0.78, sh*0.05); ctx.lineTo(-sw*0.48, sh*0.22);
+    ctx.closePath(); ctx.fill();
+    // Wide low body
+    ctx.fillStyle = body;
+    ctx.fillRect(-sw*0.48, -sh*0.28, sw*0.88, sh*0.62);
+    // Neck frill (behind head)
+    ctx.fillStyle = dark;
+    ctx.beginPath();
+    ctx.moveTo(sw*0.2, -sh*0.28); ctx.lineTo(sw*0.3, -sh*0.7); ctx.lineTo(sw*0.62, -sh*0.7); ctx.lineTo(sw*0.72, -sh*0.28);
+    ctx.closePath(); ctx.fill();
+    // Head
+    ctx.fillStyle = body;
+    ctx.fillRect(sw*0.28, -sh*0.5, sw*0.55, sh*0.38);
+    // Horns (ivory)
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = stun ? '#ccc' : '#f0f0e0';
+    // Left horn
+    ctx.beginPath();
+    ctx.moveTo(sw*0.38, -sh*0.46); ctx.lineTo(sw*0.25, -sh*0.82); ctx.lineTo(sw*0.5, -sh*0.48);
+    ctx.closePath(); ctx.fill();
+    // Right horn
+    ctx.beginPath();
+    ctx.moveTo(sw*0.58, -sh*0.44); ctx.lineTo(sw*0.48, -sh*0.78); ctx.lineTo(sw*0.68, -sh*0.46);
+    ctx.closePath(); ctx.fill();
+    // Nose horn
+    ctx.beginPath();
+    ctx.moveTo(sw*0.72, -sh*0.32); ctx.lineTo(sw*0.96, -sh*0.42); ctx.lineTo(sw*0.75, -sh*0.18);
+    ctx.closePath(); ctx.fill();
+    // Eye
+    ctx.fillStyle = stun ? '#888' : '#ffffff';
+    ctx.fillRect(sw*0.35, -sh*0.44, 7, 7);
+    ctx.fillStyle = stun ? '#555' : '#ff4500';
+    ctx.fillRect(sw*0.39, -sh*0.40, 4, 4);
+    // Four legs
+    const legOff1 = stun ? 0 : Math.sin(boss.animTimer * 0.18) * 3;
+    ctx.fillStyle = dark;
+    ctx.fillRect(-sw*0.38, sh*0.3-legOff1, sw*0.2, sh*0.28); ctx.fillRect(-sw*0.38, sh*0.54, sw*0.24, sh*0.08);
+    ctx.fillRect(-sw*0.12, sh*0.3+legOff1, sw*0.2, sh*0.28); ctx.fillRect(-sw*0.12, sh*0.54, sw*0.24, sh*0.08);
+    ctx.fillRect( sw*0.1,  sh*0.3-legOff1, sw*0.2, sh*0.28); ctx.fillRect( sw*0.1,  sh*0.54, sw*0.24, sh*0.08);
+    ctx.fillRect( sw*0.32, sh*0.3+legOff1, sw*0.2, sh*0.28); ctx.fillRect( sw*0.32, sh*0.54, sw*0.24, sh*0.08);
 
-  const legOff = stun ? 0 : Math.sin(boss.animTimer * 0.2) * 4;
-  ctx.fillRect(-sw*0.05, sh*0.32-legOff, sw*0.24, sh*0.22);
-  ctx.fillRect(-sw*0.05, sh*0.52,        sw*0.30, sh*0.06);
-  ctx.fillRect( sw*0.15, sh*0.32+legOff, sw*0.24, sh*0.22);
-  ctx.fillRect( sw*0.15, sh*0.52,        sw*0.30, sh*0.06);
+  } else {
+    // ── Pterosaur ──
+    // Wings
+    ctx.fillStyle = dark;
+    ctx.beginPath();
+    ctx.moveTo(-sw*0.08, -sh*0.05); ctx.lineTo(-sw*0.92, sh*0.32); ctx.lineTo(-sw*0.08, sh*0.28);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo( sw*0.08, -sh*0.05); ctx.lineTo( sw*0.92, sh*0.32); ctx.lineTo( sw*0.08, sh*0.28);
+    ctx.closePath(); ctx.fill();
+    // Wing membrane highlights
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(-sw*0.08, sh*0.0); ctx.lineTo(-sw*0.75, sh*0.28); ctx.lineTo(-sw*0.08, sh*0.22);
+    ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1;
+    // Body
+    ctx.fillStyle = body;
+    ctx.fillRect(-sw*0.14, -sh*0.3, sw*0.28, sh*0.52);
+    // Head crest
+    ctx.fillStyle = dark;
+    ctx.beginPath();
+    ctx.moveTo(sw*0.1, -sh*0.28); ctx.lineTo(sw*0.02, -sh*0.7); ctx.lineTo(sw*0.28, -sh*0.28);
+    ctx.closePath(); ctx.fill();
+    // Head
+    ctx.fillStyle = body;
+    ctx.fillRect(sw*0.08, -sh*0.42, sw*0.32, sh*0.28);
+    // Beak (long, pointed)
+    ctx.fillStyle = dark;
+    ctx.beginPath();
+    ctx.moveTo(sw*0.28, -sh*0.3); ctx.lineTo(sw*0.86, -sh*0.36); ctx.lineTo(sw*0.28, -sh*0.18);
+    ctx.closePath(); ctx.fill();
+    // Eye
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = stun ? '#888' : '#ffffff';
+    ctx.fillRect(sw*0.12, -sh*0.38, 6, 6);
+    ctx.fillStyle = stun ? '#555' : '#cc00ff';
+    ctx.fillRect(sw*0.16, -sh*0.34, 3, 3);
+    // Tiny claws
+    ctx.fillStyle = dark;
+    const claw = stun ? 0 : Math.sin(boss.animTimer * 0.12) * 3;
+    ctx.fillRect(-sw*0.06, sh*0.22+claw, sw*0.1, sh*0.12);
+    ctx.fillRect( sw*0.0,  sh*0.22-claw, sw*0.1, sh*0.12);
+  }
 
-  // Eye
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = stun ? '#888' : '#ffff00';
-  ctx.fillRect(sw*0.2, -sh*0.48, 8, 8);
-  ctx.fillStyle = stun ? '#555' : '#ff0000';
-  ctx.fillRect(sw*0.25,-sh*0.44, 5, 5);
   ctx.restore();
 
   // HP bar
-  const bx = boss.x, by = boss.y - 16, bw = boss.w;
-  ctx.fillStyle = '#330010'; ctx.fillRect(bx, by, bw, 8);
-  ctx.fillStyle = '#e94560'; ctx.fillRect(bx, by, bw * (boss.hp / boss.maxHp), 8);
+  const bx = boss.x, by = boss.y - 18, bw = boss.w;
+  ctx.fillStyle = '#111';
+  ctx.fillRect(bx, by, bw, 8);
+  ctx.fillStyle = glow;
+  ctx.fillRect(bx, by, bw * (boss.hp / boss.maxHp), 8);
   ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(bx, by, bw, 8);
   ctx.save();
   ctx.textAlign = 'center'; ctx.font = '10px "Courier New"';
   ctx.fillStyle = '#fff';
-  ctx.fillText(`HP ${boss.hp}/${boss.maxHp}`, bx + bw/2, by - 2);
+  ctx.fillText(`HP ${boss.hp}/${boss.maxHp}`, bx + bw / 2, by - 2);
   ctx.restore();
 }
 
@@ -917,6 +1051,18 @@ function loop(ts) {
   }
 
   drawHUD();
+  // Checkpoint notification
+  if (checkpointMsg > 0) {
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.globalAlpha = Math.min(1, checkpointMsg / 30);
+    ctx.font = 'bold 22px "Courier New"';
+    ctx.fillStyle = '#00d4aa';
+    ctx.shadowColor = '#00d4aa';
+    ctx.shadowBlur = 14;
+    ctx.fillText('✓ CHECKPOINT!', W / 2, H / 2 - 70);
+    ctx.restore();
+  }
   if (gamePhase === 'dead')    drawDeathScreen();
   if (gamePhase === 'respawn') drawRespawnScreen();
   if (gamePhase === 'win')     drawWinScreen();
