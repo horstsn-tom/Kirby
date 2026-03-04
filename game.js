@@ -405,7 +405,8 @@ function update(ts) {
     checkpointY         = p.y;
     checkpointCamX      = camera.x;
     nextCheckpointScore += 250;
-    checkpointMsg       = 120; // frames to display message
+    checkpointMsg       = 120;
+    lives               = 3;
   }
 
   // ── Boss fight trigger ──
