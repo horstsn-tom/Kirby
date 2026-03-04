@@ -33,6 +33,16 @@ const keys = {};
 window.addEventListener('keydown', e => { keys[e.code] = true; });
 window.addEventListener('keyup',   e => { keys[e.code] = false; });
 
+canvas.addEventListener('click', e => {
+  if (gamePhase !== 'menu') return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (W / rect.width);
+  const my = (e.clientY - rect.top)  * (H / rect.height);
+  if (mx >= W/2 - 90 && mx <= W/2 + 90 && my >= H/2 + 58 && my <= H/2 + 104) {
+    gamePhase = 'playing';
+  }
+});
+
 function pressing(...codes) {
   return codes.some(c => keys[c]);
 }
@@ -217,7 +227,7 @@ function initGame() {
     { x: 5100, activated: false },
   ];
   checkpointMsg  = 0;
-  gamePhase         = 'playing';
+  gamePhase         = 'menu';
   deathFlash        = 0;
 }
 
@@ -276,6 +286,11 @@ let lastTime = 0;
 function update(ts) {
   const dt = Math.min((ts - lastTime) / 16.67, 3); // normalized to 60fps
   lastTime = ts;
+
+  if (gamePhase === 'menu') {
+    if (pressing('Space', 'Enter')) gamePhase = 'playing';
+    return;
+  }
 
   deathFlash    = Math.max(0, deathFlash - dt * 0.05);
   checkpointMsg = Math.max(0, checkpointMsg - dt);
@@ -486,33 +501,55 @@ function die() {
 
 // ─── Boss ────────────────────────────────────────────────────────────────────
 const BOSS_CFGS = [
-  { w: 60, h: 70, hp: 3, name: 'T-REX',      body: '#9b2335', dark: '#6b1525', glow: '#e94560', bg1: '#0d0005', bg2: '#2a000f', floor: '#3d0015', floorTop: '#6b0025' },
-  { w: 80, h: 55, hp: 4, name: 'TRICERATOPS', body: '#0891b2', dark: '#0e7490', glow: '#38bdf8', bg1: '#001520', bg2: '#002a3d', floor: '#003d55', floorTop: '#006b8a' },
-  { w: 72, h: 52, hp: 3, name: 'PTEROSAUR',   body: '#7c3aed', dark: '#5b21b6', glow: '#a78bfa', bg1: '#08001a', bg2: '#160035', floor: '#25005a', floorTop: '#4a00a0' },
+  { w: 60, h: 70, hp: 5, name: 'T-REX',      body: '#9b2335', dark: '#6b1525', glow: '#e94560', bg1: '#0d0005', bg2: '#2a000f', floor: '#3d0015', floorTop: '#6b0025' },
+  { w: 80, h: 55, hp: 6, name: 'TRICERATOPS', body: '#0891b2', dark: '#0e7490', glow: '#38bdf8', bg1: '#001520', bg2: '#002a3d', floor: '#003d55', floorTop: '#006b8a' },
+  { w: 72, h: 52, hp: 5, name: 'PTEROSAUR',   body: '#7c3aed', dark: '#5b21b6', glow: '#a78bfa', bg1: '#08001a', bg2: '#160035', floor: '#25005a', floorTop: '#4a00a0' },
 ];
 
 function makeBoss(type) {
-  const c = BOSS_CFGS[type];
+  const c    = BOSS_CFGS[type];
+  const round = Math.floor(bossCount / 3); // gets harder each full cycle
+  const hp   = c.hp + round * 2;
   const startY = type === 2 ? H - 40 - 150 : H - 40 - c.h;
   return { x: W - c.w - 80, y: startY, baseY: startY,
-           w: c.w, h: c.h, hp: c.hp, maxHp: c.hp, type,
-           animTimer: 0, stunTimer: 0, facingRight: false };
+           w: c.w, h: c.h, hp, maxHp: hp, type, round,
+           animTimer: 0, stunTimer: 0, facingRight: false,
+           dashActive: 0, dashCooldown: 120 };
 }
 
 function updateBoss(dt) {
   boss.animTimer += dt;
 
-  // Pterosaur bobs up and down
+  // Pterosaur: bobs faster and wilder as HP drops
   if (boss.type === 2) {
-    boss.y = boss.baseY + Math.sin(boss.animTimer * 0.04) * 65;
+    const rage = 1 - boss.hp / boss.maxHp;
+    boss.y = boss.baseY + Math.sin(boss.animTimer * (0.04 + rage * 0.035)) * (65 + rage * 50);
   }
 
   if (boss.stunTimer > 0) {
     boss.stunTimer -= dt;
+    boss.dashActive = 0;
   } else {
     const dx = (state.x + state.w / 2) - (boss.x + boss.w / 2);
-    const baseSpd = boss.type === 1 ? 1.8 : 1.2;
-    const speed   = baseSpd + (boss.maxHp - boss.hp) * (boss.type === 1 ? 0.8 : 0.5);
+
+    // Dash mechanic for T-Rex and Triceratops
+    if (boss.type !== 2) {
+      if (boss.dashActive > 0) {
+        boss.dashActive -= dt;
+      } else if (boss.dashCooldown > 0) {
+        boss.dashCooldown -= dt;
+      } else {
+        boss.dashActive   = 28;
+        boss.dashCooldown = boss.type === 0 ? 190 : 230;
+      }
+    }
+
+    const baseSpd    = boss.type === 1 ? 2.5 : boss.type === 0 ? 2.0 : 1.8;
+    const roundBonus = (boss.round || 0) * 0.5;
+    const rageBonus  = (boss.maxHp - boss.hp) * (boss.type === 1 ? 0.65 : 0.45);
+    const dashBonus  = boss.dashActive > 0 ? 4.5 : 0;
+    const speed      = baseSpd + roundBonus + rageBonus + dashBonus;
+
     boss.x += (dx > 0 ? speed : -speed) * dt;
     boss.facingRight = dx > 0;
   }
@@ -520,13 +557,16 @@ function updateBoss(dt) {
 
   if (rectOverlap(state, boss)) {
     const p = state;
-    if (p.vy > 0 && p.y + p.h < boss.y + boss.h * 0.4 + 6) {
+    // Tighter stomp window (top 30% of boss) — harder to hit
+    if (p.vy > 0 && p.y + p.h < boss.y + boss.h * 0.3 + 6) {
       boss.hp -= 1;
+      boss.dashActive   = 0;
+      boss.dashCooldown = 80;
       p.vy = JUMP_FORCE * 0.7;
-      boss.stunTimer = 55;
+      boss.stunTimer = 35;
       p.squishY = 0.5; p.squishX = 1.5;
       if (boss.hp <= 0) {
-        score += 200;
+        score += 200 + (boss.round || 0) * 100;
         camera.x = savedCameraX;
         boss = null;
         gamePhase = 'playing';
@@ -1047,6 +1087,61 @@ function drawWinScreen() {
   if (pressing('Space', 'Enter')) initGame();
 }
 
+function drawMenuScreen() {
+  drawBackground();
+  ctx.save();
+  ctx.textAlign = 'center';
+
+  // Title — "DINO"
+  ctx.font = 'bold 78px "Courier New"';
+  ctx.shadowColor = '#4ade80';
+  ctx.shadowBlur  = 36;
+  ctx.fillStyle   = '#22c55e';
+  ctx.fillText('DINO', W / 2, H / 2 - 70);
+
+  // Title — "JUMP"
+  ctx.fillStyle   = '#4ade80';
+  ctx.shadowColor = '#22c55e';
+  ctx.fillText('JUMP', W / 2, H / 2 + 4);
+
+  // Tagline
+  ctx.font      = '14px "Courier New"';
+  ctx.fillStyle = '#7dd3a8';
+  ctx.shadowBlur = 4;
+  ctx.fillText('Stomp enemies  ·  Collect coins  ·  Defeat bosses', W / 2, H / 2 + 38);
+
+  // Start button — pulsing glow
+  const pulse = Math.sin(Date.now() * 0.003) * 0.2 + 0.8;
+  const bx = W / 2 - 90, by = H / 2 + 58, bw = 180, bh = 46;
+  ctx.shadowColor = '#22c55e';
+  ctx.shadowBlur  = 22 * pulse;
+  ctx.fillStyle   = `rgba(34,197,94,${0.12 + pulse * 0.08})`;
+  ctx.fillRect(bx, by, bw, bh);
+  ctx.strokeStyle = `rgba(74,222,128,${pulse})`;
+  ctx.lineWidth   = 2;
+  ctx.strokeRect(bx, by, bw, bh);
+  ctx.shadowBlur  = 8;
+  ctx.font        = 'bold 22px "Courier New"';
+  ctx.fillStyle   = '#ffffff';
+  ctx.fillText('\u25b6  START', W / 2, by + 30);
+
+  // Best score
+  if (bestScore > 0) {
+    ctx.font      = '13px "Courier New"';
+    ctx.fillStyle = '#ffd700';
+    ctx.shadowBlur = 4;
+    ctx.fillText(`Best: ${bestScore}`, W / 2, H / 2 + 124);
+  }
+
+  // Controls hint
+  ctx.font      = '12px "Courier New"';
+  ctx.fillStyle = '#555';
+  ctx.shadowBlur = 0;
+  ctx.fillText('Arrow keys / WASD  ·  Space to jump  ·  or click START', W / 2, H - 22);
+
+  ctx.restore();
+}
+
 function drawCheckpointFlag(cp) {
   const x = cp.x - camera.x;
   if (x < -20 || x > W + 20) return;
@@ -1104,6 +1199,8 @@ function loop(ts) {
   requestAnimationFrame(loop);
 
   update(ts);
+
+  if (gamePhase === 'menu') { drawMenuScreen(); return; }
 
   if (boss !== null) {
     // Boss arena
