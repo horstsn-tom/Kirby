@@ -83,25 +83,17 @@ function buildLevel() {
   fp.forEach(p => platforms.push({ x: p.x, y: p.y, w: p.w, h: 18, deadly: false }));
 
   // Spikes on some platforms
+  // One cactus per platform, centred
   const spikyPlatIdx = [1, 3, 5, 7, 9, 11, 13];
   spikyPlatIdx.forEach(i => {
     const p = fp[i];
     if (!p) return;
-    const count = Math.floor(p.w / 18);
-    const startX = p.x + (p.w - count * 18) / 2;
-    for (let j = 0; j < count; j++) {
-      spikes.push({ x: startX + j * 18 + 3, y: p.y - 24, w: 12, h: 24, platY: p.y });
-    }
+    spikes.push({ x: p.x + Math.floor(p.w / 2) - 6, y: p.y - 24, w: 12, h: 24, platY: p.y });
   });
 
-  // Ground spikes in pits/danger zones
-  [
-    { x: 420, count: 4 },
-    { x: 600, count: 3 },
-  ].forEach(({ x, count }) => {
-    for (let j = 0; j < count; j++) {
-      spikes.push({ x: x + j * 18, y: H - 64, w: 12, h: 24, platY: H - 40 });
-    }
+  // Ground cacti (well-spaced)
+  [440, 480, 640].forEach(x => {
+    spikes.push({ x, y: H - 64, w: 12, h: 24, platY: H - 40 });
   });
 
   // Enemies on some platforms
@@ -145,6 +137,7 @@ function makePlayer() {
     jumpBuffer: 0,
     coyoteTime: 0,
     jumpsLeft: 1,
+    wasJump: false,
     animTimer: 0,
     squishY: 1, squishX: 1,
     dead: false,
@@ -159,17 +152,23 @@ let camera;
 let score;
 let lives;
 let bestScore = 0;
-let gamePhase; // 'playing' | 'respawn' | 'dead' | 'win'
+let gamePhase; // 'playing' | 'boss' | 'respawn' | 'dead' | 'win'
 let deathFlash;
+let boss;
+let nextBossScore;
+let savedCameraX;
 
 function initGame() {
-  level      = buildLevel();
-  state      = makePlayer();
-  camera     = { x: 0 };
-  score      = 0;
-  lives      = 3;
-  gamePhase  = 'playing';
-  deathFlash = 0;
+  level          = buildLevel();
+  state          = makePlayer();
+  camera         = { x: 0 };
+  score          = 0;
+  lives          = 3;
+  boss           = null;
+  nextBossScore  = 500;
+  savedCameraX   = 0;
+  gamePhase      = 'playing';
+  deathFlash     = 0;
 }
 
 initGame();
@@ -239,15 +238,22 @@ function update(ts) {
   if (gamePhase === 'respawn') {
     state.deathTimer -= dt;
     if (state.deathTimer <= 0) {
-      state     = makePlayer();
-      camera    = { x: 0 };
-      gamePhase = 'playing';
+      state      = makePlayer();
       deathFlash = 0;
+      if (boss !== null) {
+        state.x = 80; state.y = H - 80;
+        camera.x = 0;
+        gamePhase = 'boss';
+      } else {
+        camera    = { x: 0 };
+        gamePhase = 'playing';
+      }
     }
     return;
   }
 
   if (gamePhase === 'win') return;
+  if (gamePhase !== 'playing' && gamePhase !== 'boss') return;
 
   const p = state;
   p.animTimer += dt;
@@ -273,8 +279,10 @@ function update(ts) {
   if (p.onGround) { p.coyoteTime = 8; p.jumpsLeft = 1; }
   else            { p.coyoteTime = Math.max(0, p.coyoteTime - dt); }
 
-  if (jump) p.jumpBuffer = 8;
-  else      p.jumpBuffer = Math.max(0, p.jumpBuffer - dt);
+  const justJumped = jump && !p.wasJump;
+  p.wasJump = jump;
+  if (justJumped) p.jumpBuffer = 8;
+  else            p.jumpBuffer = Math.max(0, p.jumpBuffer - dt);
 
   if (p.jumpBuffer > 0 && p.coyoteTime > 0) {
     p.vy = JUMP_FORCE;
@@ -300,14 +308,30 @@ function update(ts) {
   // Reset ground flag
   p.onGround = false;
 
-  // Platform collisions
-  level.platforms.forEach(plat => {
-    if (rectOverlap(p, plat)) resolvePlatform(p, plat);
-  });
+  // Platform collisions (level) or simple arena floor (boss)
+  if (gamePhase === 'boss') {
+    if (p.y + p.h > H - 40) {
+      p.y = H - 40 - p.h;
+      if (p.vy > 0) { p.vy = 0; p.onGround = true; p.squishY = 0.6; p.squishX = 1.4; }
+    }
+    if (p.x < 20)          { p.x = 20;          p.vx = 0; }
+    if (p.x + p.w > W - 20){ p.x = W - p.w - 20; p.vx = 0; }
+  } else {
+    level.platforms.forEach(plat => {
+      if (rectOverlap(p, plat)) resolvePlatform(p, plat);
+    });
+  }
 
   // Squish recovery
   p.squishY += (1 - p.squishY) * 0.2 * dt;
   p.squishX += (1 - p.squishX) * 0.2 * dt;
+
+  // ── Boss phase: update boss then skip level logic ──
+  if (gamePhase === 'boss') {
+    updateBoss(dt);
+    camera.x = 0;
+    return;
+  }
 
   // ── Enemy update ──
   level.enemies.forEach(e => {
@@ -362,6 +386,18 @@ function update(ts) {
     if (score > bestScore) bestScore = score;
   }
 
+  // ── Boss fight trigger ──
+  if (score >= nextBossScore) {
+    savedCameraX  = camera.x;
+    nextBossScore += 500;
+    boss          = makeBoss();
+    state.x = 80; state.y = H - 80;
+    state.vx = 0; state.vy = 0;
+    camera.x = 0;
+    gamePhase = 'boss';
+    return;
+  }
+
   // ── Camera ──
   const targetX = p.x - W * 0.35;
   camera.x += (targetX - camera.x) * 0.1 * dt;
@@ -369,7 +405,7 @@ function update(ts) {
 }
 
 function die() {
-  if (gamePhase !== 'playing') return;
+  if (gamePhase !== 'playing' && gamePhase !== 'boss') return;
   deathFlash = 1;
   lives -= 1;
   if (score > bestScore) bestScore = score;
@@ -380,6 +416,122 @@ function die() {
     gamePhase = 'respawn';
     state.deathTimer = 80;
   }
+}
+
+// ─── Boss ────────────────────────────────────────────────────────────────────
+function makeBoss() {
+  return { x: W - 160, y: H - 40 - 70, w: 60, h: 70, hp: 3, maxHp: 3,
+           animTimer: 0, stunTimer: 0, facingRight: false };
+}
+
+function updateBoss(dt) {
+  boss.animTimer += dt;
+  if (boss.stunTimer > 0) {
+    boss.stunTimer -= dt;
+  } else {
+    const dx = (state.x + state.w / 2) - (boss.x + boss.w / 2);
+    const speed = 1.2 + (boss.maxHp - boss.hp) * 0.5;
+    boss.x += (dx > 0 ? speed : -speed) * dt;
+    boss.facingRight = dx > 0;
+  }
+  boss.x = Math.max(20, Math.min(W - boss.w - 20, boss.x));
+
+  if (rectOverlap(state, boss)) {
+    const p = state;
+    if (p.vy > 0 && p.y + p.h < boss.y + boss.h * 0.4 + 6) {
+      boss.hp -= 1;
+      p.vy = JUMP_FORCE * 0.7;
+      boss.stunTimer = 55;
+      p.squishY = 0.5; p.squishX = 1.5;
+      if (boss.hp <= 0) {
+        score += 200;
+        camera.x = savedCameraX;
+        boss = null;
+        gamePhase = 'playing';
+      }
+    } else {
+      die();
+    }
+  }
+}
+
+function drawBossArena() {
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0d0005');
+  grad.addColorStop(1, '#2a000f');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#3d0015';
+  ctx.fillRect(0, H - 40, W, 40);
+  ctx.fillStyle = '#6b0025';
+  ctx.fillRect(0, H - 40, W, 4);
+  ctx.fillStyle = '#1a000a';
+  ctx.fillRect(0, 0, 20, H);
+  ctx.fillRect(W - 20, 0, 20, H);
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 13px "Courier New"';
+  ctx.fillStyle = '#e94560';
+  ctx.shadowColor = '#e94560';
+  ctx.shadowBlur = 12;
+  ctx.fillText('★ BOSS FIGHT ★', W / 2, 18);
+  ctx.restore();
+}
+
+function drawBoss() {
+  if (!boss) return;
+  const cx = Math.round(boss.x + boss.w / 2);
+  const cy = Math.round(boss.y + boss.h / 2);
+  const sw = boss.w, sh = boss.h;
+  const stun = boss.stunTimer > 0;
+  const body = stun ? '#ffffff' : '#9b2335';
+  const dark = stun ? '#cccccc' : '#6b1525';
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  if (!boss.facingRight) ctx.scale(-1, 1);
+  ctx.shadowColor = stun ? '#fff' : '#e94560';
+  ctx.shadowBlur = 20;
+
+  // Tail
+  ctx.fillStyle = dark;
+  ctx.beginPath();
+  ctx.moveTo(-sw*0.3, sh*0.05); ctx.lineTo(-sw*0.85, sh*0.0); ctx.lineTo(-sw*0.3, sh*0.32);
+  ctx.closePath(); ctx.fill();
+
+  ctx.fillStyle = body;
+  ctx.fillRect(-sw*0.3, -sh*0.22, sw*0.65, sh*0.58); // body
+  ctx.fillRect(-sw*0.05,-sh*0.42, sw*0.45, sh*0.25); // neck
+  ctx.fillRect( sw*0.12,-sh*0.52, sw*0.52, sh*0.32); // head
+  ctx.fillStyle = dark;
+  ctx.fillRect( sw*0.28,-sh*0.26, sw*0.32, sh*0.16); // jaw
+  ctx.fillRect( sw*0.2,  sh*0.0,  sw*0.2,  sh*0.14); // arm
+  ctx.fillRect( sw*0.36, sh*0.1,  sw*0.1,  sh*0.07);
+
+  const legOff = stun ? 0 : Math.sin(boss.animTimer * 0.2) * 4;
+  ctx.fillRect(-sw*0.05, sh*0.32-legOff, sw*0.24, sh*0.22);
+  ctx.fillRect(-sw*0.05, sh*0.52,        sw*0.30, sh*0.06);
+  ctx.fillRect( sw*0.15, sh*0.32+legOff, sw*0.24, sh*0.22);
+  ctx.fillRect( sw*0.15, sh*0.52,        sw*0.30, sh*0.06);
+
+  // Eye
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = stun ? '#888' : '#ffff00';
+  ctx.fillRect(sw*0.2, -sh*0.48, 8, 8);
+  ctx.fillStyle = stun ? '#555' : '#ff0000';
+  ctx.fillRect(sw*0.25,-sh*0.44, 5, 5);
+  ctx.restore();
+
+  // HP bar
+  const bx = boss.x, by = boss.y - 16, bw = boss.w;
+  ctx.fillStyle = '#330010'; ctx.fillRect(bx, by, bw, 8);
+  ctx.fillStyle = '#e94560'; ctx.fillRect(bx, by, bw * (boss.hp / boss.maxHp), 8);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(bx, by, bw, 8);
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.font = '10px "Courier New"';
+  ctx.fillStyle = '#fff';
+  ctx.fillText(`HP ${boss.hp}/${boss.maxHp}`, bx + bw/2, by - 2);
+  ctx.restore();
 }
 
 // ─── Draw helpers ────────────────────────────────────────────────────────────
@@ -744,28 +896,27 @@ function loop(ts) {
 
   update(ts);
 
-  // Draw
-  drawBackground();
+  if (boss !== null) {
+    // Boss arena
+    drawBossArena();
+    ctx.save();
+    drawBoss();
+    drawPlayer(state);
+    ctx.restore();
+  } else {
+    // Normal level
+    drawBackground();
+    ctx.save();
+    level.platforms.forEach(drawPlatform);
+    level.coins.forEach(drawCoin);
+    level.spikes.forEach(drawCactus);
+    level.enemies.forEach(drawEnemy);
+    drawFinishFlag();
+    drawPlayer(state);
+    ctx.restore();
+  }
 
-  ctx.save();
-  // Platforms
-  level.platforms.forEach(drawPlatform);
-  // Coins
-  level.coins.forEach(drawCoin);
-  // Cacti
-  level.spikes.forEach(drawCactus);
-  // Enemies
-  level.enemies.forEach(drawEnemy);
-  // Finish flag
-  drawFinishFlag();
-  // Player
-  drawPlayer(state);
-  ctx.restore();
-
-  // HUD
   drawHUD();
-
-  // Overlay screens
   if (gamePhase === 'dead')    drawDeathScreen();
   if (gamePhase === 'respawn') drawRespawnScreen();
   if (gamePhase === 'win')     drawWinScreen();
