@@ -48,6 +48,11 @@ canvas.addEventListener('click', e => {
     if (mx >= W/2 - 110 && mx <= W/2 - 66) cycleSkin(-1);
     if (mx >= W/2 +  66 && mx <= W/2 + 110) cycleSkin(1);
   }
+  // Mini-game button
+  if (mx >= W/2 - 80 && mx <= W/2 + 80 && my >= H/2 + 188 && my <= H/2 + 226) {
+    initMiniGame();
+    gamePhase = 'minigame';
+  }
 });
 
 function pressing(...codes) {
@@ -146,9 +151,10 @@ function updateMusic() {
   const phase = boss ? 'boss' : gamePhase;
   if (phase === _lastMusicPhase) return;
   _lastMusicPhase = phase;
-  if      (phase === 'menu')    startMusic(TRACK_MENU);
-  else if (phase === 'playing') startMusic(TRACK_GAME);
-  else if (phase === 'boss')    startMusic(TRACK_BOSS);
+  if      (phase === 'menu')     startMusic(TRACK_MENU);
+  else if (phase === 'playing')  startMusic(TRACK_GAME);
+  else if (phase === 'boss')     startMusic(TRACK_BOSS);
+  else if (phase === 'minigame') startMusic(TRACK_GAME);
   else                          stopMusic();
 }
 
@@ -460,6 +466,12 @@ function update(ts) {
 
   if (gamePhase === 'menu') {
     if (pressing('Space', 'Enter')) gamePhase = 'playing';
+    return;
+  }
+
+  if (gamePhase === 'minigame') {
+    if (keys['Escape']) { keys['Escape'] = false; gamePhase = 'menu'; return; }
+    updateMiniGame(dt);
     return;
   }
 
@@ -1513,6 +1525,22 @@ function drawMenuScreen() {
   }
   ctx.textAlign = 'center';
 
+  // Mini-game button
+  const mbx = W/2 - 80, mby = H/2 + 188, mbw = 160, mbh = 38;
+  const mpulse = Math.sin(Date.now() * 0.0025 + 1.5) * 0.2 + 0.8;
+  ctx.shadowColor = '#f59e0b';
+  ctx.shadowBlur  = 14 * mpulse;
+  ctx.fillStyle   = `rgba(245,158,11,${0.10 + mpulse * 0.08})`;
+  ctx.fillRect(mbx, mby, mbw, mbh);
+  ctx.strokeStyle = `rgba(253,230,138,${mpulse})`;
+  ctx.lineWidth   = 1.5;
+  ctx.strokeRect(mbx, mby, mbw, mbh);
+  ctx.shadowBlur  = 6;
+  ctx.font        = 'bold 15px "Courier New"';
+  ctx.fillStyle   = '#fde68a';
+  ctx.textAlign   = 'center';
+  ctx.fillText('🦕 MINI GAME', W / 2, mby + 25);
+
   // Controls hint
   ctx.font      = '12px "Courier New"';
   ctx.fillStyle = '#555';
@@ -1574,6 +1602,231 @@ function drawFinishFlag() {
   ctx.fill();
 }
 
+// ─── Mini-game ────────────────────────────────────────────────────────────────
+const MG = {
+  dino: { x: 90, y: 0, vy: 0, w: 32, h: 38, onGround: false, dead: false },
+  obstacles: [],
+  score: 0,
+  highScore: 0,
+  speed: 4.5,
+  spawnTimer: 0,
+  spawnInterval: 90,
+  gameOver: false,
+  groundY: 0,
+};
+
+function initMiniGame() {
+  MG.groundY = H - 80;
+  MG.dino.x = 90;
+  MG.dino.y = MG.groundY - MG.dino.h;
+  MG.dino.vy = 0;
+  MG.dino.onGround = true;
+  MG.dino.dead = false;
+  MG.obstacles = [];
+  MG.score = 0;
+  MG.speed = 4.5;
+  MG.spawnTimer = 60;
+  MG.spawnInterval = 90;
+  MG.gameOver = false;
+}
+
+function _mgSpawnObstacle() {
+  const type = Math.random() < 0.62 ? 'cactus' : 'ptero';
+  if (type === 'cactus') {
+    const h = 30 + Math.random() * 24 | 0;
+    MG.obstacles.push({ type: 'cactus', x: W + 20, w: 22, h, y: MG.groundY - h });
+  } else {
+    const fy = MG.groundY - 90 - Math.random() * 60;
+    MG.obstacles.push({ type: 'ptero', x: W + 20, w: 38, h: 24, y: fy, wing: 0 });
+  }
+}
+
+function updateMiniGame(dt) {
+  if (MG.gameOver) {
+    if (pressing('Space', 'ArrowUp', 'KeyW')) initMiniGame();
+    return;
+  }
+
+  // Jump
+  const wantsJump = pressing('Space', 'ArrowUp', 'KeyW');
+  if (wantsJump && MG.dino.onGround) {
+    MG.dino.vy = -12;
+    MG.dino.onGround = false;
+    SFX.jump();
+  }
+
+  // Gravity
+  MG.dino.vy += GRAVITY * dt;
+  if (MG.dino.vy > MAX_FALL) MG.dino.vy = MAX_FALL;
+  MG.dino.y += MG.dino.vy * dt;
+
+  // Ground
+  if (MG.dino.y >= MG.groundY - MG.dino.h) {
+    MG.dino.y = MG.groundY - MG.dino.h;
+    MG.dino.vy = 0;
+    MG.dino.onGround = true;
+  }
+
+  // Scroll speed ramps up
+  MG.speed = Math.min(14, 4.5 + MG.score * 0.004);
+
+  // Score
+  MG.score += dt * 0.4;
+
+  // Spawn obstacles
+  MG.spawnTimer -= dt;
+  if (MG.spawnTimer <= 0) {
+    _mgSpawnObstacle();
+    // Interval shrinks as speed grows
+    MG.spawnInterval = Math.max(42, 90 - MG.score * 0.06);
+    MG.spawnTimer = MG.spawnInterval + Math.random() * 30;
+  }
+
+  // Move obstacles & check collision
+  for (let i = MG.obstacles.length - 1; i >= 0; i--) {
+    const o = MG.obstacles[i];
+    o.x -= MG.speed * dt;
+    if (o.type === 'ptero') o.wing = (o.wing + dt * 0.18) % (Math.PI * 2);
+    if (o.x + o.w < 0) { MG.obstacles.splice(i, 1); continue; }
+
+    // AABB collision (shrink a little for forgiveness)
+    const pad = 5;
+    if (MG.dino.x + pad < o.x + o.w - pad &&
+        MG.dino.x + MG.dino.w - pad > o.x + pad &&
+        MG.dino.y + pad < o.y + o.h - pad &&
+        MG.dino.y + MG.dino.h - pad > o.y + pad) {
+      MG.gameOver = true;
+      if (MG.score > MG.highScore) MG.highScore = MG.score;
+      SFX.death();
+      return;
+    }
+  }
+}
+
+function drawMiniGame() {
+  // Sky gradient
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#0a0a1a');
+  sky.addColorStop(1, '#1a2a1a');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+
+  // Ground line
+  ctx.fillStyle = '#2a4a2a';
+  ctx.fillRect(0, MG.groundY, W, H - MG.groundY);
+  ctx.fillStyle = '#3a6a3a';
+  ctx.fillRect(0, MG.groundY, W, 3);
+
+  // Running score
+  ctx.save();
+  ctx.textAlign = 'right';
+  ctx.font = 'bold 16px "Courier New"';
+  ctx.fillStyle = '#7dd3a8';
+  ctx.shadowColor = '#22c55e';
+  ctx.shadowBlur = 6;
+  ctx.fillText(`SCORE: ${Math.floor(MG.score)}`, W - 20, 34);
+  ctx.fillText(`BEST: ${Math.floor(MG.highScore)}`, W - 20, 56);
+  ctx.restore();
+
+  // Back to menu hint
+  ctx.save();
+  ctx.textAlign = 'left';
+  ctx.font = '11px "Courier New"';
+  ctx.fillStyle = '#555';
+  ctx.fillText('ESC → menu', 14, 24);
+  ctx.restore();
+
+  ctx.save();
+
+  // Draw dino (reuse skin colours)
+  const sc = skinCol();
+  const d = MG.dino;
+  // Squish on ground, stretch in air
+  const airFrac = d.onGround ? 0 : Math.min(1, Math.abs(d.vy) / 12);
+  const sx2 = d.onGround ? 1 + 0.12 * Math.sin(Date.now() * 0.018) : 1 - airFrac * 0.15;
+  const sy2 = d.onGround ? 1 : 1 + airFrac * 0.18;
+  ctx.translate(d.x + d.w / 2, d.y + d.h / 2);
+  ctx.scale(sx2, sy2);
+  // Body
+  ctx.fillStyle = sc.body;
+  ctx.shadowColor = sc.glow;
+  ctx.shadowBlur = 8;
+  ctx.fillRect(-d.w / 2, -d.h / 2, d.w, d.h);
+  // Eye
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(d.w / 2 - 9, -d.h / 2 + 5, 6, 6);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(d.w / 2 - 7, -d.h / 2 + 7, 3, 3);
+  // Feet (animated)
+  ctx.fillStyle = sc.feet;
+  if (d.onGround) {
+    const step = Math.sin(Date.now() * 0.025) > 0;
+    ctx.fillRect(-d.w / 2 + (step ? 2 : 10), d.h / 2 - 2, 9, 6);
+    ctx.fillRect(-d.w / 2 + (step ? 10 : 2), d.h / 2, 9, 6);
+  } else {
+    ctx.fillRect(-d.w / 2 + 2, d.h / 2 - 2, 9, 8);
+    ctx.fillRect(-d.w / 2 + 14, d.h / 2 - 2, 9, 8);
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  // Draw obstacles
+  for (const o of MG.obstacles) {
+    if (o.type === 'cactus') {
+      ctx.shadowColor = '#22c55e';
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = '#16a34a';
+      ctx.fillRect(o.x + 7, o.y, 8, o.h);             // trunk
+      ctx.fillRect(o.x, o.y + 8, 22, 8);               // arms base
+      ctx.fillRect(o.x, o.y, 7, 18);                   // left arm
+      ctx.fillRect(o.x + 15, o.y + 4, 7, 14);          // right arm
+      ctx.fillStyle = '#4ade80';
+      ctx.fillRect(o.x + 8, o.y, 6, 4);                // tip
+    } else {
+      // Pterodactyl
+      ctx.shadowColor = '#a78bfa';
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = '#7c3aed';
+      const wFlap = Math.sin(o.wing) * 8;
+      // Body
+      ctx.fillRect(o.x + 8, o.y + 6, 20, 12);
+      // Beak
+      ctx.fillRect(o.x + 28, o.y + 8, 10, 5);
+      // Wings
+      ctx.fillStyle = '#a78bfa';
+      ctx.fillRect(o.x, o.y + wFlap, 10, 10);          // left wing
+      ctx.fillRect(o.x + 26, o.y - wFlap, 12, 8);      // right wing
+      // Eye
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(o.x + 26, o.y + 7, 4, 4);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(o.x + 27, o.y + 8, 2, 2);
+    }
+  }
+
+  ctx.shadowBlur = 0;
+  ctx.restore();
+
+  if (MG.gameOver) {
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 38px "Courier New"';
+    ctx.fillStyle = '#e94560';
+    ctx.shadowColor = '#e94560';
+    ctx.shadowBlur = 22;
+    ctx.fillText('GAME OVER', W / 2, H / 2 - 20);
+    ctx.font = '18px "Courier New"';
+    ctx.fillStyle = '#7dd3a8';
+    ctx.shadowColor = '#22c55e';
+    ctx.shadowBlur = 8;
+    ctx.fillText(`Score: ${Math.floor(MG.score)}`, W / 2, H / 2 + 22);
+    ctx.font = 'bold 15px "Courier New"';
+    ctx.fillStyle = '#aaa';
+    ctx.shadowBlur = 0;
+    ctx.fillText('SPACE / UP to restart  ·  ESC to menu', W / 2, H / 2 + 58);
+    ctx.restore();
+  }
+}
+
 // ─── Main loop ───────────────────────────────────────────────────────────────
 function loop(ts) {
   requestAnimationFrame(loop);
@@ -1582,6 +1835,7 @@ function loop(ts) {
   updateMusic();
 
   if (gamePhase === 'menu') { drawMenuScreen(); return; }
+  if (gamePhase === 'minigame') { drawMiniGame(); return; }
 
   if (boss !== null) {
     // Boss arena
