@@ -30,21 +30,167 @@ const COLOR = {
 
 // ─── Input ──────────────────────────────────────────────────────────────────
 const keys = {};
-window.addEventListener('keydown', e => { keys[e.code] = true; });
+window.addEventListener('keydown', e => { keys[e.code] = true;  initAudio(); });
 window.addEventListener('keyup',   e => { keys[e.code] = false; });
 
 canvas.addEventListener('click', e => {
-  if (gamePhase !== 'menu') return;
+  initAudio();
   const rect = canvas.getBoundingClientRect();
   const mx = (e.clientX - rect.left) * (W / rect.width);
   const my = (e.clientY - rect.top)  * (H / rect.height);
+  if (gamePhase !== 'menu') return;
+  // Start button
   if (mx >= W/2 - 90 && mx <= W/2 + 90 && my >= H/2 + 58 && my <= H/2 + 104) {
     gamePhase = 'playing';
+  }
+  // Skin arrows
+  if (my >= H/2 + 128 && my <= H/2 + 162) {
+    if (mx >= W/2 - 110 && mx <= W/2 - 66) cycleSkin(-1);
+    if (mx >= W/2 +  66 && mx <= W/2 + 110) cycleSkin(1);
   }
 });
 
 function pressing(...codes) {
   return codes.some(c => keys[c]);
+}
+
+// ─── Audio ───────────────────────────────────────────────────────────────────
+const AUDIO = { ctx: null, mGain: null, sGain: null, sched: null, track: null, pos: 0, t: 0 };
+
+function initAudio() {
+  if (AUDIO.ctx) { AUDIO.ctx.resume(); return; }
+  AUDIO.ctx   = new (window.AudioContext || window.webkitAudioContext)();
+  AUDIO.mGain = AUDIO.ctx.createGain(); AUDIO.mGain.gain.value = 0.22; AUDIO.mGain.connect(AUDIO.ctx.destination);
+  AUDIO.sGain = AUDIO.ctx.createGain(); AUDIO.sGain.gain.value = 0.5;  AUDIO.sGain.connect(AUDIO.ctx.destination);
+}
+
+function _osc(freq, dur, vol, type, dest, t0) {
+  if (!AUDIO.ctx || freq <= 0) return;
+  const o = AUDIO.ctx.createOscillator(), g = AUDIO.ctx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t0);
+  g.gain.exponentialRampToValueAtTime(0.001, t0 + dur * 0.88);
+  o.connect(g); g.connect(dest); o.start(t0); o.stop(t0 + dur);
+}
+
+function sfx(freq, endFreq, dur, vol, type) {
+  if (!AUDIO.ctx) return;
+  const t = AUDIO.ctx.currentTime + 0.01;
+  const o = AUDIO.ctx.createOscillator(), g = AUDIO.ctx.createGain();
+  o.type = type || 'square';
+  o.frequency.setValueAtTime(freq, t);
+  o.frequency.exponentialRampToValueAtTime(Math.max(endFreq, 20), t + dur);
+  g.gain.setValueAtTime(vol || 0.4, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g); g.connect(AUDIO.sGain); o.start(t); o.stop(t + dur + 0.05);
+}
+
+const SFX = {
+  jump:       () => sfx(320, 640, 0.14, 0.35, 'square'),
+  stomp:      () => { sfx(380, 120, 0.12, 0.4, 'square'); sfx(200, 60, 0.09, 0.28, 'sawtooth'); },
+  coin:       () => sfx(880, 1320, 0.16, 0.28, 'sine'),
+  powerup:    () => sfx(440, 1320, 0.38, 0.35, 'square'),
+  checkpoint: () => { sfx(660, 880, 0.14, 0.28, 'sine'); setTimeout(() => sfx(880, 1100, 0.14, 0.28, 'sine'), 190); },
+  death:      () => sfx(440, 80,  0.55, 0.5,  'sawtooth'),
+  bosshit:    () => sfx(300, 90,  0.22, 0.5,  'sawtooth'),
+  bossdie:    () => { [523,659,784,1047].forEach((f,i) => setTimeout(() => sfx(f,f,0.4,0.3,'sine'), i*160)); },
+  win:        () => { [523,659,784,1047,1319].forEach((f,i) => setTimeout(() => sfx(f,f*1.5,0.35,0.3,'triangle'), i*150)); },
+  unlock:     () => sfx(880, 1760, 0.6, 0.3, 'triangle'),
+};
+
+// Note durations at 139 BPM, 95 BPM, 160 BPM
+const _e=0.216, _q=0.432, _h=0.864;
+const _em=0.316, _qm=0.632;
+const _eb=0.188, _qb=0.375;
+
+const TRACK_MENU = [
+  [523,_qm,0.16,'triangle'],[659,_qm,0.16,'triangle'],[784,_qm,0.18,'triangle'],[659,_qm,0.16,'triangle'],
+  [880,_qm,0.16,'triangle'],[784,_qm,0.16,'triangle'],[659,_qm,0.16,'triangle'],[523,_qm*1.5,0.19,'triangle'],
+  [587,_qm,0.16,'triangle'],[698,_qm,0.16,'triangle'],[880,_qm,0.18,'triangle'],[698,_qm,0.16,'triangle'],
+  [784,_qm,0.16,'triangle'],[659,_qm,0.16,'triangle'],[523,_qm*1.5,0.20,'triangle'],[0,_qm*0.5,0,'triangle'],
+];
+const TRACK_GAME = [
+  [784,_e,0.14,'square'],[784,_e,0.14,'square'],[880,_q,0.14,'square'],
+  [784,_q,0.14,'square'],[0,_e,0,'square'],[659,_e,0.14,'square'],[784,_q,0.14,'square'],
+  [880,_q+_e,0.16,'square'],[0,_e,0,'square'],
+  [784,_e,0.14,'square'],[784,_e,0.14,'square'],[880,_q,0.14,'square'],
+  [988,_q,0.18,'square'],[880,_q,0.14,'square'],[784,_h,0.17,'square'],
+];
+const TRACK_BOSS = [
+  [523,_eb,0.19,'sawtooth'],[523,_eb,0.19,'sawtooth'],[622,_eb,0.19,'sawtooth'],[0,_eb,0,'sawtooth'],
+  [523,_eb,0.19,'sawtooth'],[698,_eb,0.19,'sawtooth'],[622,_eb,0.21,'sawtooth'],[523,_qb,0.21,'sawtooth'],
+  [466,_qb+_eb,0.19,'sawtooth'],[0,_eb,0,'sawtooth'],
+  [523,_eb,0.19,'sawtooth'],[523,_eb,0.19,'sawtooth'],[622,_eb,0.19,'sawtooth'],[0,_eb,0,'sawtooth'],
+  [698,_eb,0.19,'sawtooth'],[831,_qb,0.24,'sawtooth'],[784,_h,0.21,'sawtooth'],
+];
+
+function _musicTick() {
+  if (!AUDIO.ctx || !AUDIO.track) return;
+  while (AUDIO.t < AUDIO.ctx.currentTime + 0.15) {
+    const n = AUDIO.track[AUDIO.pos % AUDIO.track.length];
+    _osc(n[0], n[1], n[2] || 0.15, n[3] || 'square', AUDIO.mGain, AUDIO.t);
+    AUDIO.t += n[1]; AUDIO.pos++;
+  }
+}
+function startMusic(track) {
+  stopMusic();
+  if (!AUDIO.ctx) return;
+  AUDIO.track = track; AUDIO.pos = 0; AUDIO.t = AUDIO.ctx.currentTime + 0.05;
+  _musicTick();
+  AUDIO.sched = setInterval(_musicTick, 60);
+}
+function stopMusic() { clearInterval(AUDIO.sched); AUDIO.sched = null; AUDIO.track = null; }
+
+let _lastMusicPhase = '';
+function updateMusic() {
+  const phase = boss ? 'boss' : gamePhase;
+  if (phase === _lastMusicPhase) return;
+  _lastMusicPhase = phase;
+  if      (phase === 'menu')    startMusic(TRACK_MENU);
+  else if (phase === 'playing') startMusic(TRACK_GAME);
+  else if (phase === 'boss')    startMusic(TRACK_BOSS);
+  else                          stopMusic();
+}
+
+// ─── Skins ───────────────────────────────────────────────────────────────────
+const SKINS = [
+  { id:'default', name:'DINO',   hint:'',                   col:{ body:'#22c55e', dark:'#15803d', feet:'#15803d', glow:'#4ade80' } },
+  { id:'flame',   name:'FLAME',  hint:'Defeat a boss',      col:{ body:'#ef4444', dark:'#b91c1c', feet:'#dc2626', glow:'#f97316' } },
+  { id:'ocean',   name:'OCEAN',  hint:'Collect 15 coins',   col:{ body:'#3b82f6', dark:'#1d4ed8', feet:'#2563eb', glow:'#60a5fa' } },
+  { id:'shadow',  name:'SHADOW', hint:'Reach checkpoint 2', col:{ body:'#a855f7', dark:'#6b21a8', feet:'#7c3aed', glow:'#c084fc' } },
+  { id:'gold',    name:'GOLD',   hint:'Score 400 points',   col:{ body:'#f59e0b', dark:'#b45309', feet:'#d97706', glow:'#fde68a' } },
+  { id:'ghost',   name:'GHOST',  hint:'Beat the game!',     col:{ body:'#e2e8f0', dark:'#94a3b8', feet:'#cbd5e1', glow:'#f8fafc' } },
+];
+let selectedSkin = 0;
+let unlockedSkins = new Set(['default']);
+let skinUnlockMsg = 0, skinUnlockName = '';
+let coinsThisRun = 0;
+
+function loadSkins() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('dinoSkins') || '["default"]');
+    unlockedSkins = new Set(saved);
+    const idx = parseInt(localStorage.getItem('dinoSkin') || '0', 10);
+    selectedSkin = (idx >= 0 && idx < SKINS.length && unlockedSkins.has(SKINS[idx].id)) ? idx : 0;
+  } catch(e) {}
+}
+function saveSkins() {
+  try {
+    localStorage.setItem('dinoSkins', JSON.stringify([...unlockedSkins]));
+    localStorage.setItem('dinoSkin',  String(selectedSkin));
+  } catch(e) {}
+}
+function tryUnlock(id) {
+  if (unlockedSkins.has(id)) return;
+  unlockedSkins.add(id); saveSkins(); SFX.unlock();
+  skinUnlockMsg = 220; skinUnlockName = SKINS.find(s => s.id === id)?.name || id;
+}
+function skinCol() { return (SKINS[selectedSkin] || SKINS[0]).col; }
+function cycleSkin(dir) {
+  const ul = SKINS.reduce((a,s,i) => { if (unlockedSkins.has(s.id)) a.push(i); return a; }, []);
+  const cur = ul.indexOf(selectedSkin);
+  selectedSkin = ul[(cur + dir + ul.length) % ul.length];
+  saveSkins();
 }
 
 // ─── Stars (parallax background) ────────────────────────────────────────────
@@ -249,11 +395,14 @@ function initGame() {
   checkpointMsg  = 0;
   powerupMsg     = 0;
   powerupMsgType = '';
+  coinsThisRun   = 0;
+  skinUnlockMsg  = 0;
   gamePhase         = 'menu';
   deathFlash        = 0;
 }
 
 initGame();
+loadSkins();
 
 // ─── Physics constants ───────────────────────────────────────────────────────
 const GRAVITY    = 0.55;
@@ -317,6 +466,7 @@ function update(ts) {
   deathFlash    = Math.max(0, deathFlash - dt * 0.05);
   checkpointMsg = Math.max(0, checkpointMsg - dt);
   powerupMsg    = Math.max(0, powerupMsg - dt);
+  skinUnlockMsg = Math.max(0, skinUnlockMsg - dt);
 
   if (gamePhase === 'dead') {
     state.deathTimer -= dt;
@@ -388,12 +538,14 @@ function update(ts) {
     p.coyoteTime = 0;
     p.squishY = 1.4;
     p.squishX = 0.7;
+    SFX.jump();
   } else if (p.jumpBuffer > 0 && p.jumpsLeft > 0) {
     p.vy = curJump * 0.85;
     p.jumpBuffer = 0;
     p.jumpsLeft = 0;
     p.squishY = 1.3;
     p.squishX = 0.75;
+    SFX.jump();
   }
 
   // Variable jump height — release to fall faster
@@ -448,6 +600,7 @@ function update(ts) {
         score += 50;
         p.squishY = 0.5;
         p.squishX = 1.5;
+        SFX.stomp();
       } else if (!e.dead) {
         die();
         return;
@@ -468,6 +621,8 @@ function update(ts) {
     if (!c.collected && rectOverlap(p, c)) {
       c.collected = true;
       score += 10;
+      coinsThisRun++;
+      SFX.coin();
     }
     c.animT += 0.05 * dt;
   });
@@ -479,6 +634,7 @@ function update(ts) {
       pu.collected   = true;
       powerupMsgType = pu.type;
       powerupMsg     = 100;
+      SFX.powerup();
       const DUR = 360;
       if (pu.type === 'heart') {
         lives = Math.min(lives + 1, 3);
@@ -502,7 +658,14 @@ function update(ts) {
   if (p.x > 5500) {
     gamePhase = 'win';
     if (score > bestScore) bestScore = score;
+    SFX.win();
+    tryUnlock('ghost');
   }
+
+  // ── Skin unlock checks ──
+  if (score >= 400)             tryUnlock('gold');
+  if (coinsThisRun >= 15)       tryUnlock('ocean');
+  if (checkpointFlags[1]?.activated) tryUnlock('shadow');
 
   // ── Checkpoint save ──
   checkpointFlags.forEach(cp => {
@@ -513,6 +676,7 @@ function update(ts) {
       checkpointCamX = camera.x;
       checkpointMsg  = 120;
       lives          = 3;
+      SFX.checkpoint();
     }
   });
 
@@ -539,9 +703,10 @@ function die() {
   if (gamePhase !== 'playing' && gamePhase !== 'boss') return;
   if (state.shieldActive) {
     state.shieldActive = false;
-    deathFlash = 0.5; // brief flash but no death
+    deathFlash = 0.5;
     return;
   }
+  SFX.death();
   deathFlash = 1;
   lives -= 1;
   if (score > bestScore) bestScore = score;
@@ -625,6 +790,10 @@ function updateBoss(dt) {
         camera.x = savedCameraX;
         boss = null;
         gamePhase = 'playing';
+        SFX.bossdie();
+        tryUnlock('flame');
+      } else {
+        SFX.bosshit();
       }
     } else {
       die();
@@ -965,11 +1134,12 @@ function drawPlayer(p) {
   ctx.translate(cx, cy);
   if (!p.facingRight) ctx.scale(-1, 1);
 
-  ctx.shadowColor = COLOR.playerGlow;
+  const sc = skinCol();
+  ctx.shadowColor = sc.glow;
   ctx.shadowBlur  = 12;
 
   // Tail
-  ctx.fillStyle = COLOR.playerDark;
+  ctx.fillStyle = sc.dark;
   ctx.beginPath();
   ctx.moveTo(-sw * 0.3,  sh * 0.05);
   ctx.lineTo(-sw * 0.85, sh * 0.0);
@@ -978,36 +1148,36 @@ function drawPlayer(p) {
   ctx.fill();
 
   // Main body
-  ctx.fillStyle = COLOR.player;
+  ctx.fillStyle = sc.body;
   ctx.fillRect(-sw * 0.3, -sh * 0.22, sw * 0.65, sh * 0.58);
 
   // Neck / shoulder hump
-  ctx.fillStyle = COLOR.player;
+  ctx.fillStyle = sc.body;
   ctx.fillRect(-sw * 0.05, -sh * 0.42, sw * 0.45, sh * 0.25);
 
   // Head
-  ctx.fillStyle = COLOR.player;
+  ctx.fillStyle = sc.body;
   ctx.fillRect(sw * 0.12, -sh * 0.52, sw * 0.52, sh * 0.32);
 
   // Lower jaw / snout
-  ctx.fillStyle = COLOR.playerDark;
+  ctx.fillStyle = sc.dark;
   ctx.fillRect(sw * 0.28, -sh * 0.26, sw * 0.32, sh * 0.16);
 
   // Belly highlight
   ctx.shadowBlur  = 0;
-  ctx.fillStyle   = COLOR.playerGlow;
+  ctx.fillStyle   = sc.glow;
   ctx.globalAlpha = 0.4;
   ctx.fillRect(-sw * 0.2, -sh * 0.05, sw * 0.28, sh * 0.32);
   ctx.globalAlpha = 1;
 
   // Tiny arm
-  ctx.fillStyle = COLOR.playerDark;
+  ctx.fillStyle = sc.dark;
   ctx.fillRect(sw * 0.2,  sh * 0.0,  sw * 0.2,  sh * 0.14);
   ctx.fillRect(sw * 0.36, sh * 0.1,  sw * 0.1,  sh * 0.07);
 
   // Legs (animated)
   const legOff = p.onGround ? Math.sin(p.animTimer * 0.25) * 3 : 0;
-  ctx.fillStyle = COLOR.playerFeet;
+  ctx.fillStyle = sc.feet;
   // Back leg
   ctx.fillRect(-sw * 0.05, sh * 0.32 - legOff, sw * 0.24, sh * 0.22);
   ctx.fillRect(-sw * 0.05, sh * 0.52,           sw * 0.30, sh * 0.06);
@@ -1301,6 +1471,48 @@ function drawMenuScreen() {
     ctx.fillText(`Best: ${bestScore}`, W / 2, H / 2 + 124);
   }
 
+  // ── Skin selector ──
+  const skin    = SKINS[selectedSkin];
+  const locked  = !unlockedSkins.has(skin.id);
+  const sy      = H / 2 + 145;
+  const arrowW  = 38, arrowH = 28;
+
+  // Left arrow
+  ctx.shadowColor = locked ? '#555' : skin.col.glow;
+  ctx.shadowBlur  = 6;
+  ctx.strokeStyle = '#888'; ctx.lineWidth = 1.5;
+  ctx.strokeRect(W/2 - 110, sy, arrowW, arrowH);
+  ctx.fillStyle = '#aaa'; ctx.font = 'bold 16px "Courier New"';
+  ctx.fillText('◀', W/2 - 110 + arrowW/2, sy + 19);
+
+  // Right arrow
+  ctx.strokeRect(W/2 + 72, sy, arrowW, arrowH);
+  ctx.fillText('▶', W/2 + 72 + arrowW/2, sy + 19);
+
+  // Skin name + color swatch
+  const sc2 = skin.col;
+  ctx.shadowColor = locked ? '#555' : sc2.glow;
+  ctx.shadowBlur  = locked ? 0 : 10;
+  // Swatch circle
+  ctx.fillStyle = locked ? '#333' : sc2.body;
+  ctx.beginPath(); ctx.arc(W/2 - 38, sy + 14, 10, 0, Math.PI*2); ctx.fill();
+  if (!locked) {
+    ctx.fillStyle = sc2.dark;
+    ctx.beginPath(); ctx.arc(W/2 - 38 + 3, sy + 14, 5, 0, Math.PI*2); ctx.fill();
+  }
+  // Name
+  ctx.font      = `bold 14px "Courier New"`;
+  ctx.fillStyle = locked ? '#555' : sc2.glow;
+  ctx.textAlign = 'left';
+  ctx.fillText((locked ? '🔒 ' : '') + skin.name, W/2 - 22, sy + 18);
+  // Hint if locked
+  if (locked) {
+    ctx.font = '10px "Courier New"'; ctx.fillStyle = '#555'; ctx.shadowBlur = 0;
+    ctx.textAlign = 'center';
+    ctx.fillText(skin.hint, W/2, sy + 36);
+  }
+  ctx.textAlign = 'center';
+
   // Controls hint
   ctx.font      = '12px "Courier New"';
   ctx.fillStyle = '#555';
@@ -1367,6 +1579,7 @@ function loop(ts) {
   requestAnimationFrame(loop);
 
   update(ts);
+  updateMusic();
 
   if (gamePhase === 'menu') { drawMenuScreen(); return; }
 
@@ -1423,6 +1636,19 @@ function loop(ts) {
   if (gamePhase === 'dead')    drawDeathScreen();
   if (gamePhase === 'respawn') drawRespawnScreen();
   if (gamePhase === 'win')     drawWinScreen();
+
+  // Skin unlock notification
+  if (skinUnlockMsg > 0) {
+    ctx.save();
+    ctx.textAlign  = 'center';
+    ctx.globalAlpha = Math.min(1, skinUnlockMsg / 30);
+    ctx.font        = 'bold 17px "Courier New"';
+    ctx.fillStyle   = '#ffd700';
+    ctx.shadowColor = '#ffd700';
+    ctx.shadowBlur  = 14;
+    ctx.fillText(`✨ SKIN UNLOCKED: ${skinUnlockName}!`, W / 2, H / 2 - 130);
+    ctx.restore();
+  }
 }
 
 requestAnimationFrame(loop);
