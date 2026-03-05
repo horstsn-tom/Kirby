@@ -1738,35 +1738,56 @@ function drawMiniGame() {
 
   ctx.save();
 
-  // Draw dino (reuse skin colours)
+  // Draw dino — same shape as main drawPlayer
   const sc = skinCol();
   const d = MG.dino;
-  // Squish on ground, stretch in air
-  const airFrac = d.onGround ? 0 : Math.min(1, Math.abs(d.vy) / 12);
-  const sx2 = d.onGround ? 1 + 0.12 * Math.sin(Date.now() * 0.018) : 1 - airFrac * 0.15;
-  const sy2 = d.onGround ? 1 : 1 + airFrac * 0.18;
-  ctx.translate(d.x + d.w / 2, d.y + d.h / 2);
-  ctx.scale(sx2, sy2);
-  // Body
-  ctx.fillStyle = sc.body;
+  const sw = d.w, sh = d.h;
+  const cx = d.x + d.w / 2, cy = d.y + d.h / 2;
+  const legOff = d.onGround ? Math.sin(Date.now() * 0.018) * 3 : 0;
+  ctx.translate(cx, cy);
   ctx.shadowColor = sc.glow;
-  ctx.shadowBlur = 8;
-  ctx.fillRect(-d.w / 2, -d.h / 2, d.w, d.h);
-  // Eye
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(d.w / 2 - 9, -d.h / 2 + 5, 6, 6);
-  ctx.fillStyle = '#000';
-  ctx.fillRect(d.w / 2 - 7, -d.h / 2 + 7, 3, 3);
-  // Feet (animated)
+  ctx.shadowBlur  = 12;
+  // Tail
+  ctx.fillStyle = sc.dark;
+  ctx.beginPath();
+  ctx.moveTo(-sw * 0.3,  sh * 0.05);
+  ctx.lineTo(-sw * 0.85, sh * 0.0);
+  ctx.lineTo(-sw * 0.3,  sh * 0.32);
+  ctx.closePath();
+  ctx.fill();
+  // Main body
+  ctx.fillStyle = sc.body;
+  ctx.fillRect(-sw * 0.3, -sh * 0.22, sw * 0.65, sh * 0.58);
+  // Neck / shoulder hump
+  ctx.fillRect(-sw * 0.05, -sh * 0.42, sw * 0.45, sh * 0.25);
+  // Head
+  ctx.fillRect(sw * 0.12, -sh * 0.52, sw * 0.52, sh * 0.32);
+  // Lower jaw / snout
+  ctx.fillStyle = sc.dark;
+  ctx.fillRect(sw * 0.28, -sh * 0.26, sw * 0.32, sh * 0.16);
+  // Belly highlight
+  ctx.shadowBlur  = 0;
+  ctx.fillStyle   = sc.glow;
+  ctx.globalAlpha = 0.4;
+  ctx.fillRect(-sw * 0.2, -sh * 0.05, sw * 0.28, sh * 0.32);
+  ctx.globalAlpha = 1;
+  // Tiny arm
+  ctx.fillStyle = sc.dark;
+  ctx.fillRect(sw * 0.2,  sh * 0.0,  sw * 0.2,  sh * 0.14);
+  ctx.fillRect(sw * 0.36, sh * 0.1,  sw * 0.1,  sh * 0.07);
+  // Legs (animated)
   ctx.fillStyle = sc.feet;
-  if (d.onGround) {
-    const step = Math.sin(Date.now() * 0.025) > 0;
-    ctx.fillRect(-d.w / 2 + (step ? 2 : 10), d.h / 2 - 2, 9, 6);
-    ctx.fillRect(-d.w / 2 + (step ? 10 : 2), d.h / 2, 9, 6);
-  } else {
-    ctx.fillRect(-d.w / 2 + 2, d.h / 2 - 2, 9, 8);
-    ctx.fillRect(-d.w / 2 + 14, d.h / 2 - 2, 9, 8);
-  }
+  ctx.fillRect(-sw * 0.05, sh * 0.32 - legOff, sw * 0.24, sh * 0.22);
+  ctx.fillRect(-sw * 0.05, sh * 0.52,           sw * 0.30, sh * 0.06);
+  ctx.fillRect( sw * 0.15, sh * 0.32 + legOff,  sw * 0.24, sh * 0.22);
+  ctx.fillRect( sw * 0.15, sh * 0.52,            sw * 0.30, sh * 0.06);
+  // Eye
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(sw * 0.2,  -sh * 0.48, 6, 6);
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(sw * 0.28, -sh * 0.43, 3, 3);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(sw * 0.22, -sh * 0.47, 2, 2);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
   // Draw obstacles
