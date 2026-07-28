@@ -40,10 +40,10 @@
       min-height: 24px;
       text-align: center;
     }
-    #actionBtn {
+    .actionBtn {
       display: block;
       width: 100%;
-      margin-top: 14px;
+      margin-top: 10px;
       padding: 14px;
       background: #000;
       color: #fff;
@@ -55,21 +55,31 @@
       cursor: pointer;
       transition: border-color 0.15s, color 0.15s, background 0.15s;
     }
-    #actionBtn:focus-visible {
+    #tabBtn { margin-top: 14px; }
+    .actionBtn:focus-visible {
       outline: 2px solid #4caf50;
       outline-offset: 2px;
     }
-    #actionBtn.armed {
+    #tabBtn.armed {
       border-color: #4caf50;
       color: #4caf50;
-      animation: pulse 0.5s ease-in-out infinite alternate;
+      animation: pulseGreen 0.5s ease-in-out infinite alternate;
+    }
+    #yellBtn.armed {
+      border-color: #4a90d9;
+      color: #4a90d9;
+      animation: pulseBlue 0.5s ease-in-out infinite alternate;
     }
     @media (prefers-reduced-motion: reduce) {
-      #actionBtn.armed { animation: none; }
+      .actionBtn.armed { animation: none; }
     }
-    @keyframes pulse {
+    @keyframes pulseGreen {
       from { background: #000; }
       to { background: #0a2a12; }
+    }
+    @keyframes pulseBlue {
+      from { background: #000; }
+      to { background: #0a1a2a; }
     }
   </style>
 </head>
@@ -77,15 +87,17 @@
   <div id="wrap">
     <canvas id="game" width="800" height="500"></canvas>
     <div id="message"></div>
-    <div id="ui">TAB / tap button — Look Busy &nbsp;|&nbsp; SPACE / tap screen — Start</div>
-    <button id="actionBtn" type="button">Look Busy</button>
+    <div id="ui">Mom: TAB / tap — Look Busy &nbsp;|&nbsp; Brother: Y / tap — Yell &nbsp;|&nbsp; SPACE / tap screen — Start</div>
+    <button id="tabBtn" class="actionBtn" type="button">Look Busy</button>
+    <button id="yellBtn" class="actionBtn" type="button">Yell At Him</button>
   </div>
 
   <script>
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
     const messageEl = document.getElementById('message');
-    const actionBtn = document.getElementById('actionBtn');
+    const tabBtn = document.getElementById('tabBtn');
+    const yellBtn = document.getElementById('yellBtn');
 
     const W = canvas.width;
     const H = canvas.height;
@@ -96,6 +108,8 @@
     const PLAYER = { x: 195, y: 330 };
     const DOOR = { x: W - 150, y: 110, w: 90, h: 270 };
     const CAUGHT_X = PLAYER.x + 55;
+
+    const VISITOR_COLOR = { mom: '#c23b6e', brother: '#4a90d9' };
 
     const HIGH_SCORE_KEY = 'touchGrassHighScore';
 
@@ -120,61 +134,69 @@
       score: 0,
       lives: 3,
       highScore: loadHighScore(),
-      momPhase: 'hidden', // hidden | warning | approaching | caught | leaving
+      visitPhase: 'hidden', // hidden | warning | approaching | caught | leaving
+      visitorType: 'mom', // mom | brother
       phaseTimer: 0,
-      momTimer: 0,
+      visitTimer: 0,
       reactionWindow: 1.6,
       difficulty: 0,
       flash: 0,
     };
 
-    const mom = { x: DOOR.x + DOOR.w / 2 };
+    const visitor = { x: DOOR.x + DOOR.w / 2 };
 
     function randRange(min, max) {
       return min + Math.random() * (max - min);
     }
 
-    function scheduleNextMom() {
+    function scheduleNextVisit() {
       const gap = Math.max(1.8, 4.2 - state.difficulty * 0.12);
-      state.momTimer = randRange(gap * 0.7, gap * 1.3);
+      state.visitTimer = randRange(gap * 0.7, gap * 1.3);
+      state.visitorType = Math.random() < 0.5 ? 'mom' : 'brother';
     }
 
     function startGame() {
       state.screen = 'playing';
       state.score = 0;
       state.lives = 3;
-      state.momPhase = 'hidden';
+      state.visitPhase = 'hidden';
       state.difficulty = 0;
       state.reactionWindow = 1.6;
       state.flash = 0;
-      scheduleNextMom();
+      scheduleNextVisit();
       updateMessage();
     }
 
     function updateMessage() {
+      const isMom = state.visitorType === 'mom';
       if (state.screen === 'menu') {
         messageEl.textContent = 'Press SPACE to start grinding';
       } else if (state.screen === 'gameover') {
         messageEl.textContent =
           `Grounded! Screen Time: ${Math.floor(state.score)}s ` +
           `(High Score: ${Math.floor(state.highScore)}s). Press SPACE to restart.`;
-      } else if (state.momPhase === 'warning') {
-        messageEl.textContent = 'Footsteps in the hallway...';
-      } else if (state.momPhase === 'approaching') {
-        messageEl.textContent = 'MOM INCOMING! Press TAB to look busy!';
-      } else if (state.momPhase === 'caught') {
-        messageEl.textContent = 'Caught! "GO TOUCH GRASS!"';
-      } else if (state.momPhase === 'leaving') {
-        messageEl.textContent = 'Phew... close one.';
+      } else if (state.visitPhase === 'warning') {
+        messageEl.textContent = isMom ? 'Footsteps in the hallway...' : "Your brother's coming...";
+      } else if (state.visitPhase === 'approaching') {
+        messageEl.textContent = isMom
+          ? 'MOM INCOMING! Press TAB to look busy!'
+          : 'BROTHER INCOMING! Press Y to yell at him!';
+      } else if (state.visitPhase === 'caught') {
+        messageEl.textContent = isMom
+          ? 'Caught! "GO TOUCH GRASS!"'
+          : 'He saw your screen. "Nice K/D, loser!"';
+      } else if (state.visitPhase === 'leaving') {
+        messageEl.textContent = isMom ? 'Phew... close one.' : 'He backs off. "Okay okay, geez!"';
       } else {
         messageEl.textContent = '';
       }
-      actionBtn.classList.toggle('armed', state.momPhase === 'approaching');
+      tabBtn.classList.toggle('armed', state.visitPhase === 'approaching' && isMom);
+      yellBtn.classList.toggle('armed', state.visitPhase === 'approaching' && !isMom);
     }
 
-    function handleTab() {
-      if (state.screen !== 'playing' || state.momPhase !== 'approaching') return;
-      state.momPhase = 'leaving';
+    function handleAction(type) {
+      if (state.screen !== 'playing' || state.visitPhase !== 'approaching' || state.visitorType !== type) return;
+      state.visitPhase = 'leaving';
       state.phaseTimer = 0.8;
       state.difficulty++;
       state.reactionWindow = Math.max(0.85, 1.6 - state.difficulty * 0.05);
@@ -189,16 +211,23 @@
     document.addEventListener('keydown', e => {
       if (e.code === 'Tab') {
         e.preventDefault();
-        handleTab();
+        handleAction('mom');
+      } else if (e.code === 'KeyY') {
+        e.preventDefault();
+        handleAction('brother');
       } else if (e.code === 'Space') {
         e.preventDefault();
         handleSpace();
       }
     });
 
-    actionBtn.addEventListener('click', e => {
+    tabBtn.addEventListener('click', e => {
       e.preventDefault();
-      handleTab();
+      handleAction('mom');
+    });
+    yellBtn.addEventListener('click', e => {
+      e.preventDefault();
+      handleAction('brother');
     });
     canvas.addEventListener('click', () => handleSpace());
 
@@ -206,11 +235,11 @@
       if (state.flash > 0) state.flash = Math.max(0, state.flash - dt * 2);
       if (state.screen !== 'playing') return;
 
-      if (state.momPhase === 'hidden') {
+      if (state.visitPhase === 'hidden') {
         state.score += dt * 10;
-        state.momTimer -= dt;
-        if (state.momTimer <= 0) {
-          state.momPhase = 'warning';
+        state.visitTimer -= dt;
+        if (state.visitTimer <= 0) {
+          state.visitPhase = 'warning';
           state.phaseTimer = 0.7;
           updateMessage();
         }
@@ -219,25 +248,25 @@
 
       state.phaseTimer -= dt;
 
-      if (state.momPhase === 'warning') {
+      if (state.visitPhase === 'warning') {
         if (state.phaseTimer <= 0) {
-          state.momPhase = 'approaching';
+          state.visitPhase = 'approaching';
           state.phaseTimer = state.reactionWindow;
-          mom.x = DOOR.x;
+          visitor.x = DOOR.x;
           updateMessage();
         }
-      } else if (state.momPhase === 'approaching') {
+      } else if (state.visitPhase === 'approaching') {
         const progress = 1 - Math.max(0, state.phaseTimer) / state.reactionWindow;
-        mom.x = DOOR.x + (CAUGHT_X - DOOR.x) * progress;
+        visitor.x = DOOR.x + (CAUGHT_X - DOOR.x) * progress;
         if (state.phaseTimer <= 0) {
-          state.momPhase = 'caught';
+          state.visitPhase = 'caught';
           state.phaseTimer = 1.1;
           state.lives--;
           state.flash = 1;
-          mom.x = CAUGHT_X;
+          visitor.x = CAUGHT_X;
           updateMessage();
         }
-      } else if (state.momPhase === 'caught') {
+      } else if (state.visitPhase === 'caught') {
         if (state.phaseTimer <= 0) {
           if (state.lives <= 0) {
             state.screen = 'gameover';
@@ -246,17 +275,17 @@
               saveHighScore(state.highScore);
             }
           } else {
-            state.momPhase = 'hidden';
-            scheduleNextMom();
+            state.visitPhase = 'hidden';
+            scheduleNextVisit();
           }
           updateMessage();
         }
-      } else if (state.momPhase === 'leaving') {
+      } else if (state.visitPhase === 'leaving') {
         const progress = 1 - Math.max(0, state.phaseTimer) / 0.8;
-        mom.x = CAUGHT_X - Math.min(1, progress * 1.3) * (CAUGHT_X - DOOR.x);
+        visitor.x = CAUGHT_X - Math.min(1, progress * 1.3) * (CAUGHT_X - DOOR.x);
         if (state.phaseTimer <= 0) {
-          state.momPhase = 'hidden';
-          scheduleNextMom();
+          state.visitPhase = 'hidden';
+          scheduleNextVisit();
           updateMessage();
         }
       }
@@ -272,7 +301,7 @@
       ctx.strokeStyle = '#5a3d24';
       ctx.lineWidth = 6;
       ctx.strokeRect(DOOR.x, DOOR.y, DOOR.w, DOOR.h);
-      const doorOpen = state.momPhase !== 'hidden';
+      const doorOpen = state.visitPhase !== 'hidden';
       if (!doorOpen) {
         ctx.fillStyle = '#6b4a2b';
         ctx.fillRect(DOOR.x, DOOR.y, DOOR.w, DOOR.h);
@@ -310,11 +339,41 @@
       ctx.fillRect(PLAYER.x - 14, PLAYER.y - 8, 28, 34);
     }
 
-    function drawMom() {
-      if (state.momPhase === 'hidden') return;
+    function drawMomSprite(x, y) {
+      ctx.fillStyle = '#c23b6e';
+      ctx.beginPath();
+      ctx.moveTo(x, y - 60);
+      ctx.lineTo(x - 18, y);
+      ctx.lineTo(x + 18, y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#e0b088';
+      ctx.beginPath();
+      ctx.arc(x, y - 72, 13, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#7a2b2b';
+      ctx.beginPath();
+      ctx.arc(x, y - 78, 14, Math.PI, Math.PI * 2);
+      ctx.fill();
+    }
 
-      if (state.momPhase === 'warning') {
-        ctx.fillStyle = '#fff';
+    function drawBrotherSprite(x, y) {
+      ctx.fillStyle = '#4a90d9';
+      ctx.fillRect(x - 15, y - 54, 30, 54);
+      ctx.fillStyle = '#e0b088';
+      ctx.beginPath();
+      ctx.arc(x, y - 64, 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#241b12';
+      ctx.fillRect(x - 12, y - 76, 24, 8);
+    }
+
+    function drawVisitor() {
+      if (state.visitPhase === 'hidden') return;
+      const isMom = state.visitorType === 'mom';
+
+      if (state.visitPhase === 'warning') {
+        ctx.fillStyle = VISITOR_COLOR[state.visitorType];
         ctx.font = 'bold 28px Courier New';
         ctx.textAlign = 'center';
         const bob = Math.sin(performance.now() / 100) * 4;
@@ -323,29 +382,16 @@
       }
 
       const y = FLOOR_Y - 4;
-      ctx.fillStyle = '#c23b6e';
-      ctx.beginPath();
-      ctx.moveTo(mom.x, y - 60);
-      ctx.lineTo(mom.x - 18, y);
-      ctx.lineTo(mom.x + 18, y);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = '#e0b088';
-      ctx.beginPath();
-      ctx.arc(mom.x, y - 72, 13, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#7a2b2b';
-      ctx.beginPath();
-      ctx.arc(mom.x, y - 78, 14, Math.PI, Math.PI * 2);
-      ctx.fill();
+      if (isMom) drawMomSprite(visitor.x, y);
+      else drawBrotherSprite(visitor.x, y);
 
-      if (state.momPhase === 'approaching') {
+      if (state.visitPhase === 'approaching') {
         const pct = Math.max(0, state.phaseTimer) / state.reactionWindow;
         const barW = 200;
         const barX = W / 2 - barW / 2;
         ctx.fillStyle = '#333';
         ctx.fillRect(barX, 18, barW, 10);
-        ctx.fillStyle = pct > 0.35 ? '#4caf50' : '#e05353';
+        ctx.fillStyle = pct > 0.35 ? VISITOR_COLOR[state.visitorType] : '#e05353';
         ctx.fillRect(barX, 18, barW * pct, 10);
       }
     }
@@ -386,7 +432,7 @@
 
     function draw(now) {
       drawRoom(now);
-      drawMom();
+      drawVisitor();
       drawHud();
     }
 

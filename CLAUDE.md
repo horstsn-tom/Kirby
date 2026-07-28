@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This repo is a small collection of self-contained single-file browser games. Each game is one `.html` file with HTML, CSS, and JavaScript inline — no build system, package manager, dependency list, or test suite.
 
 - `index.html` — Pong (two-player, W/S and Arrow keys)
-- `touch-grass.html` — "Touch Grass": survive at your desk racking up Screen Time while dodging Mom, who periodically appears at the door and must be evaded by pressing TAB within a shrinking reaction window before she catches you (3 lives)
+- `touch-grass.html` — "Touch Grass": survive at your desk racking up Screen Time while reacting to whoever shows up at the door — Mom (TAB / "Look Busy" to hide) or your brother (Y / "Yell At Him" to shoo him off) — within a shrinking reaction window before you're caught (3 lives); playable on mobile via on-screen buttons and tap-to-start
 
 ## Running a game
 
@@ -40,8 +40,8 @@ Gameplay constants (`PADDLE_W`, `PADDLE_H`, `BALL_SIZE`, `PADDLE_SPEED`, `WIN_SC
 
 Same single-file, `state`-object-plus-`requestAnimationFrame`-loop style as `index.html`, but driven by delta-time (`performance.now()` diffs) rather than fixed per-frame steps:
 
-- **State machine** — `state.screen` (`menu`/`playing`/`gameover`) gates input and updates; `state.momPhase` (`hidden`/`warning`/`approaching`/`caught`/`leaving`) drives Mom's behavior and is the core of the game. `mom.x` is interpolated between the door and the desk based on `state.phaseTimer` versus `state.reactionWindow`.
-- **Difficulty ramp** — each successful dodge increments `state.difficulty`, which shrinks `state.reactionWindow` and the gap between Mom's appearances (`scheduleNextMom()`), floored so the game stays playable.
-- **Input** — `keydown` handles `Tab` (only effective during `momPhase === 'approaching'`; always `preventDefault`ed so it never shifts browser focus) and `Space` (start/restart).
-- **Scoring/persistence** — `state.score` accrues while `momPhase === 'hidden'`; high score is read/written to `localStorage` under `touchGrassHighScore`.
-- **Rendering** — `drawRoom()`, `drawMom()`, and `drawHud()` are called each frame from `draw()`; the reaction-time bar and life indicators (grass-blade triangles) are drawn directly on the canvas, not as DOM/emoji elements.
+- **State machine** — `state.screen` (`menu`/`playing`/`gameover`) gates input and updates; `state.visitPhase` (`hidden`/`warning`/`approaching`/`caught`/`leaving`) drives the door-visit sequence and is the core of the game. `state.visitorType` (`mom`/`brother`), chosen randomly each visit in `scheduleNextVisit()`, decides which sprite/color/required action applies. `visitor.x` is interpolated between the door and the desk based on `state.phaseTimer` versus `state.reactionWindow`.
+- **Difficulty ramp** — each successful reaction increments `state.difficulty`, which shrinks `state.reactionWindow` and the gap between visits (`scheduleNextVisit()`), floored so the game stays playable.
+- **Input** — `handleAction(type)` is the single entry point for reacting; it only succeeds when `visitPhase === 'approaching'` and `visitorType === type`. `keydown` maps `Tab` → `handleAction('mom')` and `KeyY` → `handleAction('brother')` (both `preventDefault`ed so Tab never shifts browser focus), plus `Space` → start/restart. The `#tabBtn`/`#yellBtn` on-screen buttons and a canvas tap (→ `Space`) mirror the same handlers for touch devices, so keep new input paths going through `handleAction`/`handleSpace` rather than duplicating state changes.
+- **Scoring/persistence** — `state.score` accrues while `visitPhase === 'hidden'`; high score is read/written to `localStorage` under `touchGrassHighScore` (guarded with try/catch since some browsers restrict storage on `file://` pages).
+- **Rendering** — `drawRoom()`, `drawVisitor()`, and `drawHud()` are called each frame from `draw()`; `drawVisitor()` dispatches to `drawMomSprite()`/`drawBrotherSprite()` by `visitorType`. The reaction-time bar, warning glyph, and life indicators (grass-blade triangles) are drawn directly on the canvas, colored per `VISITOR_COLOR`, not as DOM/emoji elements.
