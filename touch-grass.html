@@ -182,9 +182,15 @@
           ? 'MOM INCOMING! Press TAB to look busy!'
           : 'BROTHER INCOMING! Press Y to yell at him!';
       } else if (state.visitPhase === 'caught') {
-        messageEl.textContent = isMom
-          ? 'Caught! "GO TOUCH GRASS!"'
-          : 'He saw your screen. "Nice K/D, loser!"';
+        if (state.wrongInput) {
+          messageEl.textContent = isMom
+            ? 'Wrong move! Yelling doesn\'t work on Mom — she catches you!'
+            : "Wrong move! Looking busy doesn't fool your brother!";
+        } else {
+          messageEl.textContent = isMom
+            ? 'Caught! "GO TOUCH GRASS!"'
+            : 'He saw your screen. "Nice K/D, loser!"';
+        }
       } else if (state.visitPhase === 'leaving') {
         messageEl.textContent = isMom ? 'Phew... close one.' : 'He backs off. "Okay okay, geez!"';
       } else {
@@ -194,13 +200,26 @@
       yellBtn.classList.toggle('armed', state.visitPhase === 'approaching' && !isMom);
     }
 
+    function triggerCaught(wrongInput) {
+      state.visitPhase = 'caught';
+      state.phaseTimer = 1.1;
+      state.wrongInput = wrongInput;
+      state.lives--;
+      state.flash = 1;
+      visitor.x = CAUGHT_X;
+    }
+
     function handleAction(type) {
-      if (state.screen !== 'playing' || state.visitPhase !== 'approaching' || state.visitorType !== type) return;
-      state.visitPhase = 'leaving';
-      state.phaseTimer = 0.8;
-      state.difficulty++;
-      state.reactionWindow = Math.max(0.85, 1.6 - state.difficulty * 0.05);
-      state.score += 25;
+      if (state.screen !== 'playing' || state.visitPhase !== 'approaching') return;
+      if (state.visitorType === type) {
+        state.visitPhase = 'leaving';
+        state.phaseTimer = 0.8;
+        state.difficulty++;
+        state.reactionWindow = Math.max(0.85, 1.6 - state.difficulty * 0.05);
+        state.score += 25;
+      } else {
+        triggerCaught(true);
+      }
       updateMessage();
     }
 
@@ -259,11 +278,7 @@
         const progress = 1 - Math.max(0, state.phaseTimer) / state.reactionWindow;
         visitor.x = DOOR.x + (CAUGHT_X - DOOR.x) * progress;
         if (state.phaseTimer <= 0) {
-          state.visitPhase = 'caught';
-          state.phaseTimer = 1.1;
-          state.lives--;
-          state.flash = 1;
-          visitor.x = CAUGHT_X;
+          triggerCaught(false);
           updateMessage();
         }
       } else if (state.visitPhase === 'caught') {
