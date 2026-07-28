@@ -70,6 +70,11 @@
       color: #4a90d9;
       animation: pulseBlue 0.5s ease-in-out infinite alternate;
     }
+    #hideBtn.armed {
+      border-color: #e0a83c;
+      color: #e0a83c;
+      animation: pulseAmber 0.5s ease-in-out infinite alternate;
+    }
     @media (prefers-reduced-motion: reduce) {
       .actionBtn.armed { animation: none; }
     }
@@ -81,15 +86,20 @@
       from { background: #000; }
       to { background: #0a1a2a; }
     }
+    @keyframes pulseAmber {
+      from { background: #000; }
+      to { background: #2a1f0a; }
+    }
   </style>
 </head>
 <body>
   <div id="wrap">
     <canvas id="game" width="800" height="500"></canvas>
     <div id="message"></div>
-    <div id="ui">Mom: TAB / tap — Look Busy &nbsp;|&nbsp; Brother: Y / tap — Yell &nbsp;|&nbsp; SPACE / tap screen — Start</div>
+    <div id="ui">Mom: TAB / tap — Look Busy &nbsp;|&nbsp; Brother: Y / tap — Yell &nbsp;|&nbsp; Dad: H / tap — Hide &nbsp;|&nbsp; SPACE / tap screen — Start</div>
     <button id="tabBtn" class="actionBtn" type="button">Look Busy</button>
     <button id="yellBtn" class="actionBtn" type="button">Yell At Him</button>
+    <button id="hideBtn" class="actionBtn" type="button">Hide</button>
   </div>
 
   <script>
@@ -98,6 +108,7 @@
     const messageEl = document.getElementById('message');
     const tabBtn = document.getElementById('tabBtn');
     const yellBtn = document.getElementById('yellBtn');
+    const hideBtn = document.getElementById('hideBtn');
 
     const W = canvas.width;
     const H = canvas.height;
@@ -109,7 +120,33 @@
     const DOOR = { x: W - 150, y: 110, w: 90, h: 270 };
     const CAUGHT_X = PLAYER.x + 55;
 
-    const VISITOR_COLOR = { mom: '#c23b6e', brother: '#4a90d9' };
+    const VISITOR_COLOR = { mom: '#c23b6e', brother: '#4a90d9', dad: '#e0a83c' };
+    const VISITOR_BTN = { mom: tabBtn, brother: yellBtn, dad: hideBtn };
+    const VISITOR_TYPES = Object.keys(VISITOR_COLOR);
+
+    const VISIT_COPY = {
+      mom: {
+        warning: 'Footsteps in the hallway...',
+        approaching: 'MOM INCOMING! Press TAB to look busy!',
+        caughtRight: 'Caught! "GO TOUCH GRASS!"',
+        caughtWrong: 'Wrong move! Yelling doesn\'t work on Mom — she catches you!',
+        leaving: 'Phew... close one.',
+      },
+      brother: {
+        warning: "Your brother's coming...",
+        approaching: 'BROTHER INCOMING! Press Y to yell at him!',
+        caughtRight: 'He saw your screen. "Nice K/D, loser!"',
+        caughtWrong: "Wrong move! Looking busy doesn't fool your brother!",
+        leaving: 'He backs off. "Okay okay, geez!"',
+      },
+      dad: {
+        warning: "Dad's heading this way...",
+        approaching: 'DAD INCOMING! Press H to hide!',
+        caughtRight: 'Busted! "Whatcha doing in there, bud?"',
+        caughtWrong: "Wrong move! That doesn't fool Dad — busted!",
+        leaving: 'He shrugs and wanders off.',
+      },
+    };
 
     const HIGH_SCORE_KEY = 'touchGrassHighScore';
 
@@ -135,7 +172,7 @@
       lives: 3,
       highScore: loadHighScore(),
       visitPhase: 'hidden', // hidden | warning | approaching | caught | leaving
-      visitorType: 'mom', // mom | brother
+      visitorType: 'mom', // mom | brother | dad
       phaseTimer: 0,
       visitTimer: 0,
       reactionWindow: 1.6,
@@ -152,7 +189,7 @@
     function scheduleNextVisit() {
       const gap = Math.max(1.8, 4.2 - state.difficulty * 0.12);
       state.visitTimer = randRange(gap * 0.7, gap * 1.3);
-      state.visitorType = Math.random() < 0.5 ? 'mom' : 'brother';
+      state.visitorType = VISITOR_TYPES[Math.floor(Math.random() * VISITOR_TYPES.length)];
     }
 
     function startGame() {
@@ -168,7 +205,7 @@
     }
 
     function updateMessage() {
-      const isMom = state.visitorType === 'mom';
+      const copy = VISIT_COPY[state.visitorType];
       if (state.screen === 'menu') {
         messageEl.textContent = 'Press SPACE to start grinding';
       } else if (state.screen === 'gameover') {
@@ -176,28 +213,22 @@
           `Grounded! Screen Time: ${Math.floor(state.score)}s ` +
           `(High Score: ${Math.floor(state.highScore)}s). Press SPACE to restart.`;
       } else if (state.visitPhase === 'warning') {
-        messageEl.textContent = isMom ? 'Footsteps in the hallway...' : "Your brother's coming...";
+        messageEl.textContent = copy.warning;
       } else if (state.visitPhase === 'approaching') {
-        messageEl.textContent = isMom
-          ? 'MOM INCOMING! Press TAB to look busy!'
-          : 'BROTHER INCOMING! Press Y to yell at him!';
+        messageEl.textContent = copy.approaching;
       } else if (state.visitPhase === 'caught') {
-        if (state.wrongInput) {
-          messageEl.textContent = isMom
-            ? 'Wrong move! Yelling doesn\'t work on Mom — she catches you!'
-            : "Wrong move! Looking busy doesn't fool your brother!";
-        } else {
-          messageEl.textContent = isMom
-            ? 'Caught! "GO TOUCH GRASS!"'
-            : 'He saw your screen. "Nice K/D, loser!"';
-        }
+        messageEl.textContent = state.wrongInput ? copy.caughtWrong : copy.caughtRight;
       } else if (state.visitPhase === 'leaving') {
-        messageEl.textContent = isMom ? 'Phew... close one.' : 'He backs off. "Okay okay, geez!"';
+        messageEl.textContent = copy.leaving;
       } else {
         messageEl.textContent = '';
       }
-      tabBtn.classList.toggle('armed', state.visitPhase === 'approaching' && isMom);
-      yellBtn.classList.toggle('armed', state.visitPhase === 'approaching' && !isMom);
+      for (const type of VISITOR_TYPES) {
+        VISITOR_BTN[type].classList.toggle(
+          'armed',
+          state.visitPhase === 'approaching' && state.visitorType === type
+        );
+      }
     }
 
     function triggerCaught(wrongInput) {
@@ -234,6 +265,9 @@
       } else if (e.code === 'KeyY') {
         e.preventDefault();
         handleAction('brother');
+      } else if (e.code === 'KeyH') {
+        e.preventDefault();
+        handleAction('dad');
       } else if (e.code === 'Space') {
         e.preventDefault();
         handleSpace();
@@ -247,6 +281,10 @@
     yellBtn.addEventListener('click', e => {
       e.preventDefault();
       handleAction('brother');
+    });
+    hideBtn.addEventListener('click', e => {
+      e.preventDefault();
+      handleAction('dad');
     });
     canvas.addEventListener('click', () => handleSpace());
 
@@ -383,9 +421,27 @@
       ctx.fillRect(x - 12, y - 76, 24, 8);
     }
 
+    function drawDadSprite(x, y) {
+      ctx.fillStyle = '#5b6b7a';
+      ctx.fillRect(x - 17, y - 58, 34, 58);
+      ctx.fillStyle = '#7a3a3a';
+      ctx.fillRect(x - 3, y - 58, 6, 26);
+      ctx.fillStyle = '#e0b088';
+      ctx.beginPath();
+      ctx.arc(x, y - 70, 13, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#9a9a9a';
+      ctx.beginPath();
+      ctx.arc(x, y - 76, 14, Math.PI, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#6b6b6b';
+      ctx.fillRect(x - 7, y - 65, 14, 3);
+    }
+
+    const VISITOR_SPRITE = { mom: drawMomSprite, brother: drawBrotherSprite, dad: drawDadSprite };
+
     function drawVisitor() {
       if (state.visitPhase === 'hidden') return;
-      const isMom = state.visitorType === 'mom';
 
       if (state.visitPhase === 'warning') {
         ctx.fillStyle = VISITOR_COLOR[state.visitorType];
@@ -397,8 +453,7 @@
       }
 
       const y = FLOOR_Y - 4;
-      if (isMom) drawMomSprite(visitor.x, y);
-      else drawBrotherSprite(visitor.x, y);
+      VISITOR_SPRITE[state.visitorType](visitor.x, y);
 
       if (state.visitPhase === 'approaching') {
         const pct = Math.max(0, state.phaseTimer) / state.reactionWindow;
