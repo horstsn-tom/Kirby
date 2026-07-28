@@ -12,13 +12,20 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      height: 100vh;
+      min-height: 100vh;
       font-family: 'Courier New', monospace;
       color: #fff;
+      padding: 16px;
+    }
+    #wrap {
+      width: 100%;
+      max-width: 800px;
     }
     canvas {
       border: 2px solid #fff;
       display: block;
+      width: 100%;
+      height: auto;
     }
     #ui {
       margin-top: 12px;
@@ -33,17 +40,52 @@
       min-height: 24px;
       text-align: center;
     }
+    #actionBtn {
+      display: block;
+      width: 100%;
+      margin-top: 14px;
+      padding: 14px;
+      background: #000;
+      color: #fff;
+      border: 2px solid #555;
+      font-family: inherit;
+      font-size: 16px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    #actionBtn:focus-visible {
+      outline: 2px solid #4caf50;
+      outline-offset: 2px;
+    }
+    #actionBtn.armed {
+      border-color: #4caf50;
+      color: #4caf50;
+      animation: pulse 0.5s ease-in-out infinite alternate;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #actionBtn.armed { animation: none; }
+    }
+    @keyframes pulse {
+      from { background: #000; }
+      to { background: #0a2a12; }
+    }
   </style>
 </head>
 <body>
-  <canvas id="game" width="800" height="500"></canvas>
-  <div id="message"></div>
-  <div id="ui">TAB — Look Busy &nbsp;|&nbsp; SPACE — Start / Restart</div>
+  <div id="wrap">
+    <canvas id="game" width="800" height="500"></canvas>
+    <div id="message"></div>
+    <div id="ui">TAB / tap button — Look Busy &nbsp;|&nbsp; SPACE / tap screen — Start</div>
+    <button id="actionBtn" type="button">Look Busy</button>
+  </div>
 
   <script>
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
     const messageEl = document.getElementById('message');
+    const actionBtn = document.getElementById('actionBtn');
 
     const W = canvas.width;
     const H = canvas.height;
@@ -127,6 +169,7 @@
       } else {
         messageEl.textContent = '';
       }
+      actionBtn.classList.toggle('armed', state.momPhase === 'approaching');
     }
 
     function handleTab() {
@@ -152,6 +195,12 @@
         handleSpace();
       }
     });
+
+    actionBtn.addEventListener('click', e => {
+      e.preventDefault();
+      handleTab();
+    });
+    canvas.addEventListener('click', () => handleSpace());
 
     function update(dt) {
       if (state.flash > 0) state.flash = Math.max(0, state.flash - dt * 2);
