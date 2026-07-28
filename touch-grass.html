@@ -119,6 +119,7 @@
     const PLAYER = { x: 195, y: 330 };
     const DOOR = { x: W - 150, y: 110, w: 90, h: 270 };
     const CAUGHT_X = PLAYER.x + 55;
+    const WARNING_ICON_HIDE_SCORE = 1000;
 
     const VISITOR_COLOR = { mom: '#c23b6e', brother: '#4a90d9', dad: '#e0a83c' };
     const VISITOR_BTN = { mom: tabBtn, brother: yellBtn, dad: hideBtn };
@@ -444,11 +445,13 @@
       if (state.visitPhase === 'hidden') return;
 
       if (state.visitPhase === 'warning') {
-        ctx.fillStyle = VISITOR_COLOR[state.visitorType];
-        ctx.font = 'bold 28px Courier New';
-        ctx.textAlign = 'center';
-        const bob = Math.sin(performance.now() / 100) * 4;
-        ctx.fillText('!', DOOR.x + DOOR.w / 2, DOOR.y - 14 + bob);
+        if (state.score < WARNING_ICON_HIDE_SCORE) {
+          ctx.fillStyle = VISITOR_COLOR[state.visitorType];
+          ctx.font = 'bold 28px Courier New';
+          ctx.textAlign = 'center';
+          const bob = Math.sin(performance.now() / 100) * 4;
+          ctx.fillText('!', DOOR.x + DOOR.w / 2, DOOR.y - 14 + bob);
+        }
         return;
       }
 
