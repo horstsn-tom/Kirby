@@ -57,11 +57,27 @@
 
     const HIGH_SCORE_KEY = 'touchGrassHighScore';
 
+    function loadHighScore() {
+      try {
+        return Number(localStorage.getItem(HIGH_SCORE_KEY) || 0);
+      } catch (e) {
+        return 0;
+      }
+    }
+
+    function saveHighScore(value) {
+      try {
+        localStorage.setItem(HIGH_SCORE_KEY, String(Math.floor(value)));
+      } catch (e) {
+        // localStorage unavailable (e.g. opened via file:// in some browsers) — skip persistence
+      }
+    }
+
     const state = {
       screen: 'menu', // menu | playing | gameover
       score: 0,
       lives: 3,
-      highScore: Number(localStorage.getItem(HIGH_SCORE_KEY) || 0),
+      highScore: loadHighScore(),
       momPhase: 'hidden', // hidden | warning | approaching | caught | leaving
       phaseTimer: 0,
       momTimer: 0,
@@ -178,7 +194,7 @@
             state.screen = 'gameover';
             if (state.score > state.highScore) {
               state.highScore = state.score;
-              localStorage.setItem(HIGH_SCORE_KEY, String(Math.floor(state.highScore)));
+              saveHighScore(state.highScore);
             }
           } else {
             state.momPhase = 'hidden';
