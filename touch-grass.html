@@ -253,7 +253,7 @@
       if (state.screen === 'menu') {
         messageEl.textContent = 'Press SPACE to start grinding';
       } else if (state.screen === 'teleport') {
-        messageEl.textContent = 'Teleported outside!';
+        messageEl.textContent = 'RUN FROM HOME!';
       } else if (state.screen === 'running') {
         messageEl.textContent = '';
       } else if (state.screen === 'gameover') {
@@ -749,6 +749,11 @@
         ctx.textAlign = 'center';
         ctx.font = 'bold 36px Courier New';
         ctx.fillText('TOUCH GRASS', W / 2, H / 2 - 10);
+      } else if (state.screen === 'teleport') {
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 34px Courier New';
+        ctx.fillText('RUN FROM HOME!', W / 2, H / 2 - 10);
       }
     }
 
