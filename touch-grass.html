@@ -545,13 +545,63 @@
       ctx.fillStyle = '#333';
       ctx.fillRect(MONITOR.x + MONITOR.w / 2 - 6, MONITOR.y + MONITOR.h, 12, 14);
 
-      // Player
+      drawPlayer(now);
+      drawActionEffect(now);
+    }
+
+    function drawPlayer(now) {
+      let crouch = 0;
+      if (state.visitPhase === 'leaving' && state.visitorType === 'dad') {
+        const t = 1 - Math.max(0, state.phaseTimer) / 0.8;
+        crouch = Math.sin(Math.min(1, t * 1.6) * Math.PI) * 16;
+      }
       ctx.fillStyle = '#e0b088';
       ctx.beginPath();
-      ctx.arc(PLAYER.x, PLAYER.y - 20, 13, 0, Math.PI * 2);
+      ctx.arc(PLAYER.x, PLAYER.y - 20 + crouch, 13, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#3355aa';
-      ctx.fillRect(PLAYER.x - 14, PLAYER.y - 8, 28, 34);
+      ctx.fillRect(PLAYER.x - 14, PLAYER.y - 8 + crouch, 28, Math.max(6, 34 - crouch));
+    }
+
+    function drawActionEffect(now) {
+      if (state.visitPhase !== 'leaving') return;
+      const t = 1 - Math.max(0, state.phaseTimer) / 0.8;
+      const fade = 1 - t;
+
+      if (state.visitorType === 'mom') {
+        ctx.strokeStyle = `rgba(90, 220, 130, ${Math.max(0.35, fade)})`;
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        for (let i = 0; i < 4; i++) {
+          const bob = Math.sin(now / 40 + i * 1.7) * 8;
+          const hx = PLAYER.x - 16 + i * 11;
+          ctx.beginPath();
+          ctx.moveTo(hx, PLAYER.y + 12 + bob * 0.5);
+          ctx.lineTo(hx + 3, PLAYER.y + 3 + bob * 0.5);
+          ctx.stroke();
+        }
+        ctx.lineCap = 'butt';
+      } else if (state.visitorType === 'brother') {
+        ctx.strokeStyle = `rgba(74, 144, 217, ${fade})`;
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 3; i++) {
+          const r = 12 + i * 9 + t * 18;
+          ctx.beginPath();
+          ctx.arc(PLAYER.x + 16, PLAYER.y - 22, r, -0.55, 0.55);
+          ctx.stroke();
+        }
+      } else if (state.visitorType === 'dad') {
+        ctx.strokeStyle = `rgba(224, 168, 60, ${fade})`;
+        ctx.lineWidth = 2;
+        const dashY = PLAYER.y + 2;
+        for (let i = 0; i < 4; i++) {
+          const dx = PLAYER.x - 24 + i * 16;
+          ctx.beginPath();
+          ctx.moveTo(dx, dashY);
+          ctx.lineTo(dx + 8, dashY);
+          ctx.stroke();
+        }
+      }
     }
 
     function drawMomSprite(x, y) {
