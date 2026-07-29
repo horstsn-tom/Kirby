@@ -525,14 +525,43 @@ function drawFrog(p) {
   ctx.translate(cx, cy + h * 0.06);
   ctx.scale(sx, sy);
 
-  // back legs, tucked at the sides - dark mossy shadow, like the tree trunks
-  ctx.fillStyle = '#233420';
-  ctx.beginPath();
-  ctx.ellipse(-w * 0.36, h * 0.28, w * 0.24, h * 0.18, -0.3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.ellipse(w * 0.36, h * 0.28, w * 0.24, h * 0.18, 0.3, 0, Math.PI * 2);
-  ctx.fill();
+  // back legs (thigh + shin, bent at a knee), tucked when grounded and
+  // kicking back/reaching down depending on whether the frog is rising or falling
+  const kick = rise; // >0 rising, <0 falling, ~0 idle/grounded
+  const legColor = '#233420';
+  const footColor = '#182610';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const side of [-1, 1]) {
+    const hipX = side * w * 0.26, hipY = -h * 0.02;
+    const kneeX = side * (w * 0.50 + Math.max(0, kick) * w * 0.22);
+    const kneeY = h * 0.30 - Math.max(0, kick) * h * 0.10;
+    const footX = side * (w * 0.30 - Math.max(0, -kick) * w * 0.06);
+    const footY = h * 0.50 + Math.max(0, -kick) * h * 0.30;
+
+    ctx.strokeStyle = legColor;
+    ctx.lineWidth = w * 0.20;
+    ctx.beginPath();
+    ctx.moveTo(hipX, hipY);
+    ctx.lineTo(kneeX, kneeY);
+    ctx.lineTo(footX, footY);
+    ctx.stroke();
+
+    // webbed foot pad
+    ctx.fillStyle = footColor;
+    ctx.beginPath();
+    ctx.ellipse(footX, footY, w * 0.11, h * 0.055, side * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    // toes
+    ctx.strokeStyle = footColor;
+    ctx.lineWidth = 1.4;
+    for (let t = -1; t <= 1; t++) {
+      ctx.beginPath();
+      ctx.moveTo(footX, footY);
+      ctx.lineTo(footX + side * w * 0.13 + t * w * 0.045, footY + h * 0.045);
+      ctx.stroke();
+    }
+  }
 
   // body - muted bog-moss green, pulled from the platform moss tone
   ctx.fillStyle = '#5c7a42';
@@ -554,6 +583,24 @@ function drawFrog(p) {
   ctx.beginPath();
   ctx.ellipse(0, h * 0.24, w * 0.32, h * 0.2, 0, 0, Math.PI * 2);
   ctx.fill();
+
+  // front legs - short arms braced forward, in front of the body
+  ctx.strokeStyle = '#3f5730';
+  ctx.lineWidth = w * 0.13;
+  ctx.lineCap = 'round';
+  for (const side of [-1, 1]) {
+    const shoulderX = side * w * 0.22, shoulderY = h * 0.14;
+    const handX = side * (w * 0.34 + Math.max(0, -kick) * w * 0.10);
+    const handY = h * 0.40 + Math.max(0, -kick) * h * 0.18;
+    ctx.beginPath();
+    ctx.moveTo(shoulderX, shoulderY);
+    ctx.lineTo(handX, handY);
+    ctx.stroke();
+    ctx.fillStyle = footColor;
+    ctx.beginPath();
+    ctx.arc(handX, handY, w * 0.06, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // eye bulges, shifted toward facing direction - a firefly-pale glow
   const eyeShift = p.facing * w * 0.14;
