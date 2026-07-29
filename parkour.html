@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Parkour</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0f0a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    font-family: 'Courier New', monospace;
+    color: #dce8d5;
+  }
+  canvas {
+    border: 2px solid #3a4a2e;
+    display: block;
+    background: #0c1811;
+  }
+  #ui {
+    margin-top: 10px;
+    font-size: 13px;
+    color: #8ba07c;
+    text-align: center;
+    max-width: 960px;
+  }
+</style>
+</head>
+<body>
+<canvas id="game" width="960" height="540"></canvas>
+<div id="ui">
+  A/D or ←/→ — Move &nbsp;|&nbsp; SPACE/W/↑ — Jump (hold near a wall to wall-jump) &nbsp;|&nbsp;
+  R — Restart Level &nbsp;|&nbsp; N — Skip Level &nbsp;|&nbsp; 1-8 — Jump to Level
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width;
+const H = canvas.height;
+
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+// ---------------------------------------------------------------
+// Level definitions
+// ---------------------------------------------------------------
+function buildLevels() {
+  const levels = [];
+
+  // Level 1 - basics: running and jumping across gaps
+  levels.push({
+    name: 'First Steps',
+    height: H,
+    start: { x: 40, y: H - 120 },
+    platforms: [
+      { x: 0,   y: H - 40, w: 260, h: 40 },
+      { x: 340, y: H - 40, w: 180, h: 40 },
+      { x: 600, y: H - 100, w: 140, h: 40 },
+      { x: 820, y: H - 40, w: 160, h: 40 },
+      { x: 1060, y: H - 140, w: 140, h: 40 },
+      { x: 1280, y: H - 40, w: 220, h: 40 },
+    ],
+    spikes: [
+      { x: 260, y: H - 20, w: 80, h: 20 },
+      { x: 740, y: H - 20, w: 80, h: 20 },
+    ],
+    checkpoints: [
+      { x: 620, y: H - 140, w: 20, h: 40 },
+    ],
+    goal: { x: 1440, y: H - 100, w: 40, h: 60 },
+  });
+
+  // Level 2 - vertical wall-jump shaft
+  levels.push({
+    name: 'Up the Shaft',
+    height: 900,
+    start: { x: 40, y: H - 120 },
+    platforms: [
+      { x: 0,   y: H - 40, w: 300, h: 40 },
+      { x: 340, y: H - 40, w: 620, h: 40 },
+      // wall-jump shaft: alternating left/right walls going up
+      { x: 700, y: 780, w: 30, h: 220 },
+      { x: 950, y: 700, w: 30, h: 300 },
+      { x: 700, y: 560, w: 30, h: 220 },
+      { x: 950, y: 380, w: 30, h: 220 },
+      { x: 700, y: 200, w: 30, h: 220 },
+      { x: 780, y: 140, w: 260, h: 30 },
+    ],
+    spikes: [],
+    checkpoints: [
+      { x: 350, y: H - 80, w: 20, h: 40 },
+    ],
+    goal: { x: 980, y: 90, w: 40, h: 50 },
+  });
+
+  // Level 3 - moving platforms over a chasm
+  levels.push({
+    name: 'Moving Ground',
+    height: H,
+    start: { x: 40, y: H - 120 },
+    platforms: [
+      { x: 0,   y: H - 40, w: 220, h: 40 },
+      { x: 700, y: H - 40, w: 260, h: 40 },
+      { x: 1200, y: H - 40, w: 220, h: 40 },
+    ],
+    movingPlatforms: [
+      { x: 280, y: H - 90, w: 120, h: 24, axis: 'x', range: [280, 560], speed: 90, phase: 0 },
+      { x: 980, y: H - 150, w: 110, h: 24, axis: 'y', range: [H - 190, H - 60], speed: 70, phase: 0 },
+      { x: 1000, y: H - 260, w: 110, h: 24, axis: 'x', range: [1000, 1140], speed: 110, phase: 2 },
+    ],
+    spikes: [
+      { x: 220, y: H - 20, w: 480, h: 20 },
+      { x: 960, y: H - 20, w: 240, h: 20 },
+    ],
+    checkpoints: [
+      { x: 710, y: H - 80, w: 20, h: 40 },
+    ],
+    goal: { x: 1360, y: H - 100, w: 40, h: 60 },
+  });
+
+  // Level 4 - spikes, gaps and wall jumps combined
+  levels.push({
+    name: 'Gauntlet',
+    height: H,
+    start: { x: 40, y: H - 120 },
+    platforms: [
+      { x: 0,   y: H - 40, w: 220, h: 40 },
+      { x: 380, y: H - 40, w: 60,  h: 40 },
+      { x: 520, y: H - 120, w: 60, h: 40 },
+      { x: 660, y: H - 200, w: 60, h: 40 },
+      { x: 520, y: H - 280, w: 60, h: 40 },
+      { x: 660, y: H - 360, w: 60, h: 40 },
+      { x: 800, y: H - 360, w: 240, h: 40 },
+      { x: 1140, y: H - 300, w: 40, h: 260 },
+      { x: 1300, y: H - 220, w: 40, h: 180 },
+      { x: 1140, y: H - 140, w: 40, h: 100 },
+      { x: 1400, y: H - 40, w: 260, h: 40 },
+    ],
+    spikes: [
+      { x: 220, y: H - 20, w: 160, h: 20 },
+      { x: 440, y: H - 20, w: 80, h: 20 },
+    ],
+    checkpoints: [
+      { x: 810, y: H - 400, w: 20, h: 40 },
+    ],
+    goal: { x: 1560, y: H - 100, w: 40, h: 60 },
+  });
+
+  // Level 5 - a long vertical climb combining wall-jumps and moving platforms
+  levels.push({
+    name: 'The High Canopy',
+    height: 1000,
+    start: { x: 40, y: 860 },
+    platforms: [
+      { x: 0,   y: 900, w: 220, h: 40 },
+      { x: 360, y: 900, w: 120, h: 40 },
+      { x: 620, y: 840, w: 100, h: 40 },
+      { x: 860, y: 780, w: 40, h: 220 },
+      { x: 1000, y: 620, w: 40, h: 260 },
+      { x: 860, y: 460, w: 40, h: 220 },
+      { x: 940, y: 400, w: 220, h: 30 },
+    ],
+    movingPlatforms: [
+      { x: 1240, y: 380, w: 110, h: 24, axis: 'y', range: [180, 380], speed: 85, phase: 1 },
+      { x: 1420, y: 180, w: 130, h: 24, axis: 'x', range: [1420, 1600], speed: 100, phase: 0 },
+    ],
+    platformsTop: [
+      { x: 1650, y: 130, w: 220, h: 40 },
+    ],
+    spikes: [
+      { x: 220, y: 920, w: 140, h: 20 },
+      { x: 480, y: 920, w: 140, h: 20 },
+      { x: 720, y: 860, w: 140, h: 20 },
+    ],
+    checkpoints: [
+      { x: 630, y: 800, w: 20, h: 40 },
+      { x: 950, y: 360, w: 20, h: 40 },
+    ],
+    goal: { x: 1760, y: 70, w: 40, h: 60 },
+  });
+  // merge extra top platforms into main platform list for level 5
+  levels[4].platforms = levels[4].platforms.concat(levels[4].platformsTop);
+  delete levels[4].platformsTop;
+
+  // Level 6 - three back-to-back moving-platform crossings over a long chasm
+  levels.push({
+    name: 'Twin Rivers',
+    height: H,
+    start: { x: 40, y: H - 120 },
+    platforms: [
+      { x: 0,    y: H - 40, w: 200, h: 40 },
+      { x: 640,  y: H - 40, w: 200, h: 40 },
+      { x: 1180, y: H - 40, w: 200, h: 40 },
+      { x: 1720, y: H - 40, w: 220, h: 40 },
+    ],
+    movingPlatforms: [
+      { x: 260,  y: H - 90,  w: 120, h: 24, axis: 'x', range: [260, 520],   speed: 90,  phase: 0 },
+      { x: 900,  y: H - 160, w: 110, h: 24, axis: 'y', range: [H - 220, H - 70], speed: 75, phase: 1 },
+      { x: 1360, y: H - 260, w: 110, h: 24, axis: 'x', range: [1360, 1520], speed: 110, phase: 2 },
+    ],
+    spikes: [
+      { x: 200,  y: H - 20, w: 440, h: 20 },
+      { x: 840,  y: H - 20, w: 340, h: 20 },
+      { x: 1380, y: H - 20, w: 340, h: 20 },
+    ],
+    checkpoints: [
+      { x: 650,  y: H - 80, w: 20, h: 40 },
+      { x: 1190, y: H - 80, w: 20, h: 40 },
+    ],
+    goal: { x: 1880, y: H - 100, w: 40, h: 60 },
+  });
+
+  // Level 7 - a taller wall-jump climb with a moving-platform crossing partway up
+  levels.push({
+    name: 'The Canopy Climb',
+    height: H,
+    start: { x: 40, y: H - 120 },
+    platforms: [
+      { x: 0,   y: 500, w: 300, h: 40 },
+      { x: 340, y: 500, w: 160, h: 40 },
+      { x: 560, y: 380, w: 30,  h: 180 },
+      { x: 560, y: 90,  w: 30,  h: 150 },
+      { x: 640, y: 70,  w: 260, h: 30 },
+    ],
+    movingPlatforms: [
+      { x: 700, y: 230, w: 100, h: 24, axis: 'x', range: [600, 760], speed: 85, phase: 0 },
+    ],
+    spikes: [],
+    checkpoints: [
+      { x: 350, y: 460, w: 20, h: 40 },
+      { x: 565, y: 50,  w: 20, h: 40 },
+    ],
+    goal: { x: 800, y: 10, w: 40, h: 60 },
+  });
+
+  // Level 8 - the finale: the Gauntlet's zigzag climb feeding straight into
+  // Twin Rivers' triple moving-platform crossing, back to back
+  levels.push({
+    name: 'Final Ascent',
+    height: H,
+    start: { x: 40, y: H - 120 },
+    platforms: [
+      { x: 0,    y: 500, w: 220, h: 40 },
+      { x: 380,  y: 500, w: 60,  h: 40 },
+      { x: 520,  y: 420, w: 60,  h: 40 },
+      { x: 660,  y: 340, w: 60,  h: 40 },
+      { x: 520,  y: 260, w: 60,  h: 40 },
+      { x: 660,  y: 180, w: 60,  h: 40 },
+      { x: 800,  y: 180, w: 240, h: 40 },
+      { x: 1140, y: 240, w: 40,  h: 260 },
+      { x: 1300, y: 320, w: 40,  h: 180 },
+      { x: 1140, y: 400, w: 40,  h: 100 },
+      { x: 1400, y: 500, w: 260, h: 40 },
+      { x: 1660, y: 500, w: 220, h: 40 },
+      { x: 2360, y: 500, w: 260, h: 40 },
+      { x: 2860, y: 500, w: 220, h: 40 },
+    ],
+    movingPlatforms: [
+      { x: 1940, y: 450, w: 120, h: 24, axis: 'x', range: [1940, 2220], speed: 90,  phase: 0 },
+      { x: 2640, y: 390, w: 110, h: 24, axis: 'y', range: [350, 480],   speed: 70,  phase: 0 },
+      { x: 2660, y: 280, w: 110, h: 24, axis: 'x', range: [2660, 2800], speed: 110, phase: 2 },
+    ],
+    spikes: [
+      { x: 220,  y: 520, w: 160, h: 20 },
+      { x: 440,  y: 520, w: 80,  h: 20 },
+      { x: 1880, y: 520, w: 480, h: 20 },
+      { x: 2620, y: 520, w: 240, h: 20 },
+    ],
+    checkpoints: [
+      { x: 810,  y: 140, w: 20, h: 40 },
+      { x: 2370, y: 460, w: 20, h: 40 },
+    ],
+    goal: { x: 3020, y: 440, w: 40, h: 60 },
+  });
+
+  // compute level width from content
+  for (const lvl of levels) {
+    let maxX = lvl.goal.x + lvl.goal.w;
+    for (const p of lvl.platforms) maxX = Math.max(maxX, p.x + p.w);
+    if (lvl.movingPlatforms) for (const p of lvl.movingPlatforms) maxX = Math.max(maxX, p.range[1] + p.w, p.x + p.w);
+    lvl.width = maxX + 160;
+    if (!lvl.movingPlatforms) lvl.movingPlatforms = [];
+    if (!lvl.spikes) lvl.spikes = [];
+    if (!lvl.checkpoints) lvl.checkpoints = [];
+  }
+  return levels;
+}
+
+const LEVELS = buildLevels();
+
+// ---------------------------------------------------------------
+// Player
+// ---------------------------------------------------------------
+const PW = 26, PH = 38;
+const GRAVITY = 0.62;
+const MAX_FALL = 18;
+const MOVE_ACCEL = 0.85;
+const AIR_ACCEL = 0.55;
+const MAX_SPEED = 5.4;
+const GROUND_FRICTION = 0.78;
+const AIR_FRICTION = 0.92;
+const JUMP_VEL = -12.4;
+const WALL_JUMP_VX = 7.6;
+const WALL_JUMP_VY = -11.4;
+const WALL_SLIDE_MAX = 2.6;
+const COYOTE_TIME = 0.11;
+const JUMP_BUFFER = 0.11;
+const WALL_JUMP_LOCK = 0.14;
+
+function makePlayer() {
+  return {
+    x: 0, y: 0, w: PW, h: PH,
+    vx: 0, vy: 0,
+    onGround: false,
+    wallDir: 0, // -1 touching wall on left side of player (wall is to the left), 1 = wall to right
+    facing: 1,
+    coyote: 0,
+    jumpBuffer: 0,
+    wallLock: 0,
+    dead: false,
+    deadTimer: 0,
+    animPhase: 0,
+  };
+}
+
+const keys = {};
+document.addEventListener('keydown', e => {
+  if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+  keys[e.code] = true;
+  if (e.code === 'KeyR') restartLevel();
+  if (e.code === 'KeyN') skipLevel();
+  if (e.code.startsWith('Digit')) {
+    const idx = parseInt(e.code.slice(-1), 10) - 1;
+    if (idx >= 0 && idx < LEVELS.length) goToLevel(idx);
+  }
+  if ((e.code === 'Space' || e.code === 'KeyW' || e.code === 'ArrowUp')) {
+    if (game.state === 'complete' || game.state === 'victory') {
+      advance();
+    }
+  }
+});
+document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+// ---------------------------------------------------------------
+// Game state
+// ---------------------------------------------------------------
+const game = {
+  levelIndex: 0,
+  state: 'playing', // playing | complete | victory
+  timer: 0,
+  deaths: 0,
+  totalTime: 0,
+  totalDeaths: 0,
+  camX: 0,
+  camY: 0,
+};
+
+let player = makePlayer();
+let checkpointPos = null;
+
+function currentLevel() { return LEVELS[game.levelIndex]; }
+
+function resetCheckpointsVisual() {
+  for (const cp of currentLevel().checkpoints) cp.active = false;
+}
+
+function spawnAt(pos) {
+  player = makePlayer();
+  player.x = pos.x;
+  player.y = pos.y;
+}
+
+function startLevel(idx) {
+  game.levelIndex = idx;
+  game.state = 'playing';
+  game.timer = 0;
+  game.deaths = 0;
+  checkpointPos = { x: currentLevel().start.x, y: currentLevel().start.y };
+  resetCheckpointsVisual();
+  spawnAt(checkpointPos);
+}
+
+function restartLevel() {
+  if (game.state === 'victory') return;
+  startLevel(game.levelIndex);
+}
+
+function goToLevel(idx) {
+  startLevel(idx);
+}
+
+function skipLevel() {
+  if (game.state === 'victory') return;
+  advanceToNext();
+}
+
+function advance() {
+  if (game.state === 'complete') advanceToNext();
+  else if (game.state === 'victory') startLevel(0);
+}
+
+function advanceToNext() {
+  if (game.levelIndex + 1 < LEVELS.length) {
+    startLevel(game.levelIndex + 1);
+  } else {
+    game.state = 'victory';
+  }
+}
+
+function die() {
+  if (player.dead) return;
+  player.dead = true;
+  player.deadTimer = 0;
+  game.deaths++;
+}
+
+// ---------------------------------------------------------------
+// Update
+// ---------------------------------------------------------------
+function updateMovingPlatforms(lvl, dt, t) {
+  for (const p of lvl.movingPlatforms) {
+    const [min, max] = p.range;
+    const mid = (min + max) / 2;
+    const amp = (max - min) / 2;
+    const val = mid + amp * Math.sin(t * (p.speed / 100) + p.phase);
+    const prev = p.axis === 'x' ? (p.curX ?? p.x) : (p.curY ?? p.y);
+    if (p.axis === 'x') { p.prevX = prev; p.curX = val; p.x = val; }
+    else { p.prevY = prev; p.curY = val; p.y = val; }
+  }
+}
+
+function collideAxis(entity, platforms, axis) {
+  for (const p of platforms) {
+    if (!rectsOverlap(entity, p)) continue;
+    if (axis === 'x') {
+      if (entity.vx > 0) { entity.x = p.x - entity.w; entity.wallHitRight = p; }
+      else if (entity.vx < 0) { entity.x = p.x + p.w; entity.wallHitLeft = p; }
+      entity.vx = 0;
+    } else {
+      if (entity.vy > 0) { entity.y = p.y - entity.h; entity.onGround = true; entity.standingOn = p; }
+      else if (entity.vy < 0) { entity.y = p.y + p.h; }
+      entity.vy = 0;
+    }
+  }
+}
+
+function update(dt) {
+  const lvl = currentLevel();
+  const t = performance.now() / 1000;
+  updateMovingPlatforms(lvl, dt, t);
+  const allSolids = lvl.platforms.concat(lvl.movingPlatforms);
+
+  if (game.state !== 'playing') return;
+
+  game.timer += dt;
+
+  if (player.dead) {
+    player.deadTimer += dt;
+    if (player.deadTimer > 0.5) spawnAt(checkpointPos);
+    return;
+  }
+
+  // horizontal input
+  const left = keys['KeyA'] || keys['ArrowLeft'];
+  const right = keys['KeyD'] || keys['ArrowRight'];
+  const jumpPressed = keys['Space'] || keys['KeyW'] || keys['ArrowUp'];
+
+  if (jumpPressed) player.jumpBuffer = JUMP_BUFFER;
+  else player.jumpBuffer = Math.max(0, player.jumpBuffer - dt);
+
+  const accel = (player.onGround ? MOVE_ACCEL : AIR_ACCEL) * dt;
+  const wallLocked = player.wallLock > 0;
+  player.wallLock = Math.max(0, player.wallLock - dt);
+
+  if (!wallLocked) {
+    if (left && !right) { player.vx -= accel; player.facing = -1; }
+    else if (right && !left) { player.vx += accel; player.facing = 1; }
+    else { player.vx *= Math.pow(player.onGround ? GROUND_FRICTION : AIR_FRICTION, dt); }
+  }
+  player.vx = clamp(player.vx, -MAX_SPEED, MAX_SPEED);
+
+  // gravity
+  player.vy = Math.min(player.vy + GRAVITY * dt, MAX_FALL);
+
+  // wall slide
+  const touchingWall = player.wallDir !== 0;
+  if (touchingWall && !player.onGround && player.vy > 0) {
+    const pushingIntoWall = (player.wallDir === 1 && right) || (player.wallDir === -1 && left);
+    if (pushingIntoWall) player.vy = Math.min(player.vy, WALL_SLIDE_MAX);
+  }
+
+  // coyote time
+  if (player.onGround) player.coyote = COYOTE_TIME;
+  else player.coyote = Math.max(0, player.coyote - dt);
+
+  // jump / wall jump
+  if (player.jumpBuffer > 0) {
+    if (player.coyote > 0) {
+      player.vy = JUMP_VEL;
+      player.onGround = false;
+      player.coyote = 0;
+      player.jumpBuffer = 0;
+    } else if (touchingWall) {
+      player.vy = WALL_JUMP_VY;
+      player.vx = -player.wallDir * WALL_JUMP_VX;
+      player.wallLock = WALL_JUMP_LOCK;
+      player.facing = -player.wallDir;
+      player.jumpBuffer = 0;
+    }
+  }
+
+  // reset per-frame collision flags
+  player.onGround = false;
+  player.wallHitLeft = null;
+  player.wallHitRight = null;
+
+  // move and resolve collisions (X axis, then Y axis)
+  doMove(player, allSolids, dt);
+
+  // walk-cycle phase advances with distance covered on the ground; its
+  // amplitude (not this phase) is what fades the animation in/out
+  player.animPhase += Math.abs(player.vx) * dt * 0.3;
+
+  // wall detection after move (small probe rects just outside player sides)
+  const probeL = { x: player.x - 2, y: player.y + 4, w: 2, h: player.h - 8 };
+  const probeR = { x: player.x + player.w, y: player.y + 4, w: 2, h: player.h - 8 };
+  player.wallDir = 0;
+  for (const p of allSolids) {
+    if (rectsOverlap(probeL, p)) { player.wallDir = -1; break; }
+  }
+  if (player.wallDir === 0) {
+    for (const p of allSolids) {
+      if (rectsOverlap(probeR, p)) { player.wallDir = 1; break; }
+    }
+  }
+
+  // carry player along moving platform they stand on
+  if (player.standingOn && player.standingOn.axis) {
+    const p = player.standingOn;
+    if (p.axis === 'x' && p.prevX !== undefined) player.x += (p.curX - p.prevX);
+    if (p.axis === 'y' && p.prevY !== undefined) player.y += (p.curY - p.prevY);
+  }
+
+  // hazards
+  for (const s of lvl.spikes) {
+    if (s.w > 0 && s.h > 0 && rectsOverlap(player, s)) { die(); break; }
+  }
+
+  // checkpoints
+  for (const cp of lvl.checkpoints) {
+    if (rectsOverlap(player, cp)) {
+      cp.active = true;
+      checkpointPos = { x: cp.x, y: cp.y - PH + cp.h };
+    }
+  }
+
+  // fell off the world
+  if (player.y > lvl.height + 200) die();
+
+  // goal
+  if (rectsOverlap(player, lvl.goal)) {
+    game.state = 'complete';
+    game.totalTime += game.timer;
+    game.totalDeaths += game.deaths;
+  }
+
+  // camera
+  const targetCamX = clamp(player.x + player.w / 2 - W / 2, 0, Math.max(0, lvl.width - W));
+  const targetCamY = clamp(player.y + player.h / 2 - H / 2, 0, Math.max(0, lvl.height - H));
+  game.camX += (targetCamX - game.camX) * Math.min(1, 12 * dt);
+  game.camY += (targetCamY - game.camY) * Math.min(1, 12 * dt);
+}
+
+function doMove(p, solids, dt) {
+  // X axis
+  p.x += p.vx * dt;
+  p.standingOn = null;
+  collideAxis(p, solids, 'x');
+  // Y axis
+  p.y += p.vy * dt;
+  collideAxis(p, solids, 'y');
+}
+
+// ---------------------------------------------------------------
+// Draw
+// ---------------------------------------------------------------
+function drawSpike(s) {
+  if (s.w <= 0) return;
+  const count = Math.max(1, Math.round(s.w / 20));
+  const step = s.w / count;
+  ctx.fillStyle = '#8a3a2b';
+  for (let i = 0; i < count; i++) {
+    ctx.beginPath();
+    ctx.moveTo(s.x + i * step, s.y + s.h);
+    ctx.lineTo(s.x + i * step + step / 2, s.y);
+    ctx.lineTo(s.x + i * step + step, s.y + s.h);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+function drawFrog(p) {
+  const w = p.w, h = p.h;
+  const cx = p.x + w / 2;
+  const cy = p.y + h / 2;
+
+  // hop squash/stretch: stretch tall on the way up, squash flat near landing
+  const rise = clamp(-p.vy / 16, -0.3, 0.35);
+  const onGroundSquash = p.onGround ? -0.12 : 0;
+  const sx = 1 - rise * 0.35 - onGroundSquash * 0.6;
+  const sy = 1 + rise * 0.35 + onGroundSquash;
+
+  // walking gait: amplitude fades in with ground speed, phase tracks distance
+  // covered (set in update()) so the stride rate matches how fast the frog moves
+  const walkAmt = p.onGround ? clamp(Math.abs(p.vx) / MAX_SPEED, 0, 1) : 0;
+  const bob = Math.max(0, Math.sin(p.animPhase * 2)) * walkAmt * h * 0.06;
+
+  ctx.save();
+  ctx.translate(cx, cy + h * 0.06 - bob);
+  ctx.scale(sx, sy);
+
+  // back legs (thigh + shin, bent at a knee): tucked when idle, kicking
+  // back/reaching down on a jump, and swinging in an alternating stride
+  // while walking on the ground
+  const kick = rise; // >0 rising, <0 falling, ~0 idle/grounded
+  const legColor = '#233420';
+  const footColor = '#182610';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const side of [-1, 1]) {
+    const legPhase = p.animPhase + (side === 1 ? Math.PI : 0);
+    const stride = Math.sin(legPhase) * walkAmt;
+    const lift = Math.max(0, Math.sin(legPhase)) * walkAmt;
+
+    const hipX = side * w * 0.26, hipY = -h * 0.02;
+    const kneeX = side * (w * 0.50 + Math.max(0, kick) * w * 0.22) + stride * w * 0.10;
+    const kneeY = h * 0.30 - Math.max(0, kick) * h * 0.10 - lift * h * 0.08;
+    const footX = side * (w * 0.30 - Math.max(0, -kick) * w * 0.06) + stride * w * 0.18;
+    const footY = h * 0.50 + Math.max(0, -kick) * h * 0.30 - lift * h * 0.16;
+
+    ctx.strokeStyle = legColor;
+    ctx.lineWidth = w * 0.20;
+    ctx.beginPath();
+    ctx.moveTo(hipX, hipY);
+    ctx.lineTo(kneeX, kneeY);
+    ctx.lineTo(footX, footY);
+    ctx.stroke();
+
+    // webbed foot pad
+    ctx.fillStyle = footColor;
+    ctx.beginPath();
+    ctx.ellipse(footX, footY, w * 0.11, h * 0.055, side * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    // toes
+    ctx.strokeStyle = footColor;
+    ctx.lineWidth = 1.4;
+    for (let t = -1; t <= 1; t++) {
+      ctx.beginPath();
+      ctx.moveTo(footX, footY);
+      ctx.lineTo(footX + side * w * 0.13 + t * w * 0.045, footY + h * 0.045);
+      ctx.stroke();
+    }
+  }
+
+  // body - muted bog-moss green, pulled from the platform moss tone
+  ctx.fillStyle = '#5c7a42';
+  ctx.beginPath();
+  ctx.ellipse(0, h * 0.02, w * 0.54, h * 0.46, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // mottled darker patches, like moss growing on a stone
+  ctx.fillStyle = '#3f5730';
+  ctx.beginPath();
+  ctx.ellipse(-w * 0.2, -h * 0.14, w * 0.13, h * 0.09, 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(w * 0.22, h * 0.06, w * 0.11, h * 0.08, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // belly - pale swamp mud tan
+  ctx.fillStyle = '#b9c68f';
+  ctx.beginPath();
+  ctx.ellipse(0, h * 0.24, w * 0.32, h * 0.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // front legs - short arms braced forward, swinging opposite the back legs
+  ctx.strokeStyle = '#3f5730';
+  ctx.lineWidth = w * 0.13;
+  ctx.lineCap = 'round';
+  for (const side of [-1, 1]) {
+    const armStride = Math.sin(p.animPhase + (side === 1 ? Math.PI : 0) + Math.PI) * walkAmt;
+    const shoulderX = side * w * 0.22, shoulderY = h * 0.14;
+    const handX = side * (w * 0.34 + Math.max(0, -kick) * w * 0.10) + armStride * w * 0.08;
+    const handY = h * 0.40 + Math.max(0, -kick) * h * 0.18 - Math.max(0, armStride) * h * 0.06;
+    ctx.beginPath();
+    ctx.moveTo(shoulderX, shoulderY);
+    ctx.lineTo(handX, handY);
+    ctx.stroke();
+    ctx.fillStyle = footColor;
+    ctx.beginPath();
+    ctx.arc(handX, handY, w * 0.06, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // eye bulges, shifted toward facing direction - a firefly-pale glow
+  const eyeShift = p.facing * w * 0.14;
+  const eyeY = -h * 0.36;
+  ctx.fillStyle = '#d8e6ac';
+  ctx.beginPath();
+  ctx.arc(eyeShift - w * 0.18, eyeY, w * 0.16, 0, Math.PI * 2);
+  ctx.arc(eyeShift + w * 0.18, eyeY, w * 0.16, 0, Math.PI * 2);
+  ctx.fill();
+
+  // pupils, looking toward facing direction
+  ctx.fillStyle = '#131f0d';
+  const pupilShift = p.facing * w * 0.06;
+  ctx.beginPath();
+  ctx.arc(eyeShift - w * 0.18 + pupilShift, eyeY, w * 0.07, 0, Math.PI * 2);
+  ctx.arc(eyeShift + w * 0.18 + pupilShift, eyeY, w * 0.07, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function hash(i) {
+  const x = Math.sin(i * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+// All background layers are drawn in screen space using an explicit
+// parallax factor (1 = moves exactly with the camera, 0 = fixed to the sky)
+// rather than via ctx.translate, so each layer's scroll speed is independent
+// of the main world transform used for gameplay objects.
+function drawSwampBackground(lvl, t) {
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#0c1811');
+  sky.addColorStop(0.6, '#1c2a17');
+  sky.addColorStop(1, '#3c4522');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+
+  const groundY = lvl.height - 210;
+
+  drawFogLayer(groundY, t);
+  drawTreeLayer(groundY, 0.3, '#152016', 220, t);   // far, slow-moving trees
+  drawTreeLayer(groundY, 0.55, '#20301f', 170, t);  // nearer, faster trees
+}
+
+function drawFogLayer(groundY, t) {
+  const parallax = 0.12;
+  const spacing = 420;
+  const drift = (t * 8) % spacing;
+  const camOffset = game.camX * parallax - drift;
+  const iMin = Math.floor((camOffset - spacing) / spacing);
+  const iMax = Math.ceil((camOffset + W + spacing) / spacing);
+  const camOffY = game.camY * parallax;
+
+  for (let i = iMin; i <= iMax; i++) {
+    const sx = i * spacing - camOffset;
+    const sy = groundY + 90 + Math.sin(i * 1.7) * 20 - camOffY;
+    const fog = ctx.createRadialGradient(sx, sy, 10, sx, sy, 260);
+    fog.addColorStop(0, 'rgba(150, 175, 120, 0.14)');
+    fog.addColorStop(1, 'rgba(150, 175, 120, 0)');
+    ctx.fillStyle = fog;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, 260, 90, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawTreeLayer(groundY, parallax, color, spacing, t) {
+  const camOffX = game.camX * parallax;
+  const camOffY = game.camY * parallax;
+  const iMin = Math.floor((camOffX - spacing) / spacing);
+  const iMax = Math.ceil((camOffX + W + spacing) / spacing);
+  const groundYScreen = groundY - camOffY;
+
+  for (let i = iMin; i <= iMax; i++) {
+    const bx = i * spacing - camOffX;
+    const trunkH = 140 + hash(i + parallax * 10) * 90;
+    const topY = groundYScreen - trunkH;
+    const sway = Math.sin(t * 0.4 + i) * 3;
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 10 + hash(i) * 6;
+    ctx.beginPath();
+    ctx.moveTo(bx, groundYScreen + 220);
+    ctx.quadraticCurveTo(bx + sway * 2, topY + trunkH * 0.5, bx + sway, topY);
+    ctx.stroke();
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(bx + sway, topY, spacing * 0.42, 46, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // hanging moss
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    for (let m = 0; m < 3; m++) {
+      const mx = bx + sway - spacing * 0.25 + m * (spacing * 0.25);
+      const mLen = 20 + hash(i * 3 + m) * 30;
+      ctx.beginPath();
+      ctx.moveTo(mx, topY + 20);
+      ctx.quadraticCurveTo(mx + Math.sin(t * 0.6 + m) * 6, topY + 20 + mLen * 0.6, mx, topY + 20 + mLen);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawFireflies(lvl, t) {
+  for (let i = 0; i < 26; i++) {
+    const bx = hash(i) * (lvl.width + 400) - 200;
+    const baseY = hash(i + 100) * lvl.height;
+    const by = baseY + Math.sin(t * 1.3 + i * 3.1) * 14;
+    const glow = 0.4 + 0.6 * Math.abs(Math.sin(t * 2 + i * 5.2));
+    ctx.fillStyle = `rgba(210, 255, 140, ${0.5 * glow})`;
+    ctx.beginPath();
+    ctx.arc(bx, by, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `rgba(230, 255, 190, ${0.9 * glow})`;
+    ctx.beginPath();
+    ctx.arc(bx, by, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function draw() {
+  const lvl = currentLevel();
+  const bgTime = performance.now() / 1000;
+
+  drawSwampBackground(lvl, bgTime);
+
+  ctx.save();
+  ctx.translate(-game.camX, -game.camY);
+
+  drawFireflies(lvl, bgTime);
+
+  // platforms - moss-capped bog wood
+  for (const p of lvl.platforms) {
+    ctx.fillStyle = '#3d2f22';
+    ctx.fillRect(p.x, p.y, p.w, p.h);
+    ctx.fillStyle = '#5a4230';
+    ctx.fillRect(p.x, p.y + p.h - 4, p.w, 4);
+    ctx.fillStyle = '#6f8f4a';
+    ctx.fillRect(p.x, p.y, p.w, 5);
+    ctx.fillStyle = '#84a85c';
+    for (let m = 0; m < p.w; m += 18) {
+      const mh = 3 + hash(p.x + m) * 5;
+      ctx.fillRect(p.x + m, p.y - mh + 5, 8, mh);
+    }
+  }
+
+  // moving platforms - drifting lily pads
+  for (const p of lvl.movingPlatforms) {
+    ctx.fillStyle = '#1f5c46';
+    ctx.beginPath();
+    ctx.ellipse(p.x + p.w / 2, p.y + p.h / 2, p.w / 2, p.h / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#3f9270';
+    ctx.beginPath();
+    ctx.ellipse(p.x + p.w / 2, p.y + p.h / 2 - 3, p.w / 2 - 6, p.h / 2 - 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#1f5c46';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(p.x + p.w / 2, p.y + 2);
+    ctx.lineTo(p.x + p.w / 2, p.y + p.h / 2);
+    ctx.lineTo(p.x + p.w - 6, p.y + p.h / 2 + 2);
+    ctx.stroke();
+  }
+
+  // spikes
+  for (const s of lvl.spikes) drawSpike(s);
+
+  // checkpoints
+  for (const cp of lvl.checkpoints) {
+    ctx.fillStyle = cp.active ? '#43d17a' : '#666';
+    ctx.fillRect(cp.x, cp.y, cp.w, cp.h);
+    ctx.fillStyle = cp.active ? '#8fffb0' : '#999';
+    ctx.beginPath();
+    ctx.moveTo(cp.x + cp.w, cp.y);
+    ctx.lineTo(cp.x + cp.w + 18, cp.y + 8);
+    ctx.lineTo(cp.x + cp.w, cp.y + 16);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // goal
+  const g = lvl.goal;
+  ctx.fillStyle = '#ffd93d';
+  ctx.fillRect(g.x, g.y, 4, g.h);
+  ctx.beginPath();
+  ctx.moveTo(g.x + 4, g.y);
+  ctx.lineTo(g.x + g.w, g.y + g.h * 0.25);
+  ctx.lineTo(g.x + 4, g.y + g.h * 0.5);
+  ctx.closePath();
+  ctx.fill();
+
+  // player
+  if (!player.dead) drawFrog(player);
+
+  ctx.restore();
+
+  drawHUD(lvl);
+}
+
+function drawHUD(lvl) {
+  ctx.fillStyle = '#eee';
+  ctx.font = 'bold 16px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText(`Level ${game.levelIndex + 1}/${LEVELS.length}: ${lvl.name}`, 12, 24);
+  ctx.font = '14px Courier New';
+  ctx.fillText(`Time: ${game.timer.toFixed(2)}s`, 12, 44);
+  ctx.fillText(`Deaths: ${game.deaths}`, 12, 62);
+
+  if (game.state === 'complete') {
+    overlay();
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 34px Courier New';
+    ctx.fillStyle = '#43d17a';
+    ctx.fillText('Level Complete!', W / 2, H / 2 - 20);
+    ctx.font = '16px Courier New';
+    ctx.fillStyle = '#eee';
+    ctx.fillText(`Time: ${game.timer.toFixed(2)}s   Deaths: ${game.deaths}`, W / 2, H / 2 + 12);
+    ctx.fillText('Press SPACE to continue', W / 2, H / 2 + 40);
+  } else if (game.state === 'victory') {
+    overlay();
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 36px Courier New';
+    ctx.fillStyle = '#ffd93d';
+    ctx.fillText('You beat Parkour!', W / 2, H / 2 - 30);
+    ctx.font = '16px Courier New';
+    ctx.fillStyle = '#eee';
+    ctx.fillText(`Total time: ${game.totalTime.toFixed(2)}s   Total deaths: ${game.totalDeaths}`, W / 2, H / 2 + 6);
+    ctx.fillText('Press SPACE to play again from Level 1', W / 2, H / 2 + 34);
+  }
+}
+
+function overlay() {
+  ctx.fillStyle = 'rgba(10, 14, 20, 0.72)';
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ---------------------------------------------------------------
+// Main loop
+// ---------------------------------------------------------------
+let lastTime = null;
+function loop(now) {
+  if (lastTime === null) lastTime = now;
+  let dt = (now - lastTime) / (1000 / 60); // dt=1 at 60fps
+  dt = clamp(dt, 0, 2);
+  lastTime = now;
+
+  update(dt);
+  draw();
+
+  requestAnimationFrame(loop);
+}
+
+startLevel(0);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
