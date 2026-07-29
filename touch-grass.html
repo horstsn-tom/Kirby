@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Touch Grass</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Courier New', monospace;
+      color: #fff;
+      padding: 16px;
+    }
+    #wrap {
+      width: 100%;
+      max-width: 800px;
+    }
+    canvas {
+      border: 2px solid #fff;
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    #ui {
+      margin-top: 12px;
+      font-size: 14px;
+      color: #aaa;
+      text-align: center;
+    }
+    #message {
+      margin-top: 6px;
+      font-size: 18px;
+      color: #fff;
+      min-height: 24px;
+      text-align: center;
+    }
+    .actionBtn {
+      display: block;
+      width: 100%;
+      margin-top: 10px;
+      padding: 14px;
+      background: #000;
+      color: #fff;
+      border: 2px solid #555;
+      font-family: inherit;
+      font-size: 16px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    #tabBtn { margin-top: 14px; }
+    #jumpBtn { display: none; }
+    .actionBtn:focus-visible {
+      outline: 2px solid #4caf50;
+      outline-offset: 2px;
+    }
+    #tabBtn.armed {
+      border-color: #4caf50;
+      color: #4caf50;
+      animation: pulseGreen 0.5s ease-in-out infinite alternate;
+    }
+    #yellBtn.armed {
+      border-color: #4a90d9;
+      color: #4a90d9;
+      animation: pulseBlue 0.5s ease-in-out infinite alternate;
+    }
+    #hideBtn.armed {
+      border-color: #e0a83c;
+      color: #e0a83c;
+      animation: pulseAmber 0.5s ease-in-out infinite alternate;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .actionBtn.armed { animation: none; }
+    }
+    @keyframes pulseGreen {
+      from { background: #000; }
+      to { background: #0a2a12; }
+    }
+    @keyframes pulseBlue {
+      from { background: #000; }
+      to { background: #0a1a2a; }
+    }
+    @keyframes pulseAmber {
+      from { background: #000; }
+      to { background: #2a1f0a; }
+    }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="game" width="800" height="500"></canvas>
+    <div id="message"></div>
+    <div id="ui"></div>
+    <button id="tabBtn" class="actionBtn" type="button">Look Busy</button>
+    <button id="yellBtn" class="actionBtn" type="button">Yell At Him</button>
+    <button id="hideBtn" class="actionBtn" type="button">Hide</button>
+    <button id="jumpBtn" class="actionBtn" type="button">Jump</button>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const messageEl = document.getElementById('message');
+    const uiEl = document.getElementById('ui');
+    const tabBtn = document.getElementById('tabBtn');
+    const yellBtn = document.getElementById('yellBtn');
+    const hideBtn = document.getElementById('hideBtn');
+    const jumpBtn = document.getElementById('jumpBtn');
+
+    const W = canvas.width;
+    const H = canvas.height;
+
+    const FLOOR_Y = 420;
+    const DESK = { x: 90, y: 330, w: 180, h: 16 };
+    const MONITOR = { x: 130, y: 250, w: 100, h: 72 };
+    const PLAYER = { x: 195, y: 330 };
+    const DOOR = { x: W - 150, y: 110, w: 90, h: 270 };
+    const CAUGHT_X = PLAYER.x + 55;
+    const WARNING_ICON_HIDE_SCORE = 1000;
+
+    const VISITOR_COLOR = { mom: '#c23b6e', brother: '#4a90d9', dad: '#e0a83c' };
+    const VISITOR_BTN = { mom: tabBtn, brother: yellBtn, dad: hideBtn };
+    const VISITOR_TYPES = Object.keys(VISITOR_COLOR);
+
+    const VISIT_COPY = {
+      mom: {
+        warning: 'Footsteps in the hallway...',
+        approaching: 'MOM INCOMING! Press TAB to look busy!',
+        caughtRight: 'Caught! "GO TOUCH GRASS!"',
+        caughtWrong: 'Wrong move! Yelling doesn\'t work on Mom — she catches you!',
+        leaving: 'Phew... close one.',
+      },
+      brother: {
+        warning: "Your brother's coming...",
+        approaching: 'BROTHER INCOMING! Press Y to yell at him!',
+        caughtRight: 'He saw your screen. "Nice K/D, loser!"',
+        caughtWrong: "Wrong move! Looking busy doesn't fool your brother!",
+        leaving: 'He backs off. "Okay okay, geez!"',
+      },
+      dad: {
+        warning: "Dad's heading this way...",
+        approaching: 'DAD INCOMING! Press H to hide!',
+        caughtRight: 'Busted! "Whatcha doing in there, bud?"',
+        caughtWrong: "Wrong move! That doesn't fool Dad — busted!",
+        leaving: 'He shrugs and wanders off.',
+      },
+    };
+
+    const RUNNER_X = 150;
+    const RUNNER_W = 24;
+    const RUNNER_H = 46;
+    const RUN_GRAVITY = 1400;
+    const JUMP_SPEED = 480;
+    const RUN_BASE_SPEED = 260;
+    const RUN_MAX_SPEED = 600;
+
+    const OBSTACLE_TYPES = ['pothole', 'hydrant', 'car'];
+    const OBSTACLE_DIMS = {
+      pothole: { w: 50, h: 12 },
+      hydrant: { w: 16, h: 34 },
+      car: { w: 46, h: 30 },
+    };
+    const OBSTACLE_COPY = {
+      pothole: 'Tripped in a pothole!',
+      hydrant: 'Smacked into a fire hydrant!',
+      car: 'Clipped by a car!',
+    };
+
+    const FLASH_RED = '200, 30, 30';
+    const FLASH_WHITE = '255, 255, 255';
+
+    const STAR_POSITIONS = Array.from({ length: 18 }, () => ({
+      x: Math.random() * W,
+      y: Math.random() * (FLOOR_Y - 40),
+    }));
+
+    const HIGH_SCORE_KEY = 'touchGrassHighScore';
+    const DISTANCE_HIGH_SCORE_KEY = 'touchGrassDistanceHighScore';
+
+    function loadStoredNumber(key) {
+      try {
+        return Number(localStorage.getItem(key) || 0);
+      } catch (e) {
+        return 0;
+      }
+    }
+
+    function saveStoredNumber(key, value) {
+      try {
+        localStorage.setItem(key, String(Math.floor(value)));
+      } catch (e) {
+        // localStorage unavailable (e.g. opened via file:// in some browsers) — skip persistence
+      }
+    }
+
+    const state = {
+      screen: 'menu', // menu | playing | teleport | running | gameover
+      score: 0,
+      lives: 3,
+      highScore: loadStoredNumber(HIGH_SCORE_KEY),
+      visitPhase: 'hidden', // hidden | warning | approaching | caught | leaving
+      visitorType: 'mom', // mom | brother | dad
+      phaseTimer: 0,
+      visitTimer: 0,
+      reactionWindow: 1.6,
+      difficulty: 0,
+      flash: 0,
+      flashColor: FLASH_RED,
+      teleportTimer: 0,
+      runDistance: 0,
+      runSpeed: RUN_BASE_SPEED,
+      distanceHighScore: loadStoredNumber(DISTANCE_HIGH_SCORE_KEY),
+      obstacles: [],
+      spawnTimer: 0,
+      deathObstacle: 'pothole',
+    };
+
+    const visitor = { x: DOOR.x + DOOR.w / 2 };
+    const runner = { jumpHeight: 0, vy: 0, onGround: true };
+
+    function randRange(min, max) {
+      return min + Math.random() * (max - min);
+    }
+
+    function scheduleNextVisit() {
+      const gap = Math.max(1.8, 4.2 - state.difficulty * 0.12);
+      state.visitTimer = randRange(gap * 0.7, gap * 1.3);
+      state.visitorType = VISITOR_TYPES[Math.floor(Math.random() * VISITOR_TYPES.length)];
+    }
+
+    function startGame() {
+      state.screen = 'playing';
+      state.score = 0;
+      state.lives = 3;
+      state.visitPhase = 'hidden';
+      state.difficulty = 0;
+      state.reactionWindow = 1.6;
+      state.flash = 0;
+      scheduleNextVisit();
+      updateMessage();
+      updateChrome();
+    }
+
+    function updateMessage() {
+      const copy = VISIT_COPY[state.visitorType];
+      if (state.screen === 'menu') {
+        messageEl.textContent = 'Press SPACE to start grinding';
+      } else if (state.screen === 'teleport') {
+        messageEl.textContent = 'RUN FROM HOME!';
+      } else if (state.screen === 'running') {
+        messageEl.textContent = '';
+      } else if (state.screen === 'gameover') {
+        messageEl.textContent =
+          `${OBSTACLE_COPY[state.deathObstacle]} Made it ${Math.floor(state.runDistance)}m outside ` +
+          `(best ${Math.floor(state.distanceHighScore)}m) after ${Math.floor(state.score)}s of Screen Time. ` +
+          `Press SPACE to try again.`;
+      } else if (state.visitPhase === 'warning') {
+        messageEl.textContent = copy.warning;
+      } else if (state.visitPhase === 'approaching') {
+        messageEl.textContent = copy.approaching;
+      } else if (state.visitPhase === 'caught') {
+        messageEl.textContent = state.wrongInput ? copy.caughtWrong : copy.caughtRight;
+      } else if (state.visitPhase === 'leaving') {
+        messageEl.textContent = copy.leaving;
+      } else {
+        messageEl.textContent = '';
+      }
+      for (const type of VISITOR_TYPES) {
+        VISITOR_BTN[type].classList.toggle(
+          'armed',
+          state.visitPhase === 'approaching' && state.visitorType === type && state.screen === 'playing'
+        );
+      }
+    }
+
+    function updateChrome() {
+      const bedroomActive = state.screen === 'menu' || state.screen === 'playing';
+      tabBtn.style.display = bedroomActive ? 'block' : 'none';
+      yellBtn.style.display = bedroomActive ? 'block' : 'none';
+      hideBtn.style.display = bedroomActive ? 'block' : 'none';
+      jumpBtn.style.display = state.screen === 'running' ? 'block' : 'none';
+
+      if (state.screen === 'running') {
+        uiEl.textContent = 'SPACE / tap screen / JUMP button — Jump!';
+      } else if (state.screen === 'teleport') {
+        uiEl.textContent = '';
+      } else if (state.screen === 'gameover') {
+        uiEl.textContent = 'SPACE / tap screen — Try Again';
+      } else {
+        uiEl.textContent = 'Mom: TAB / tap — Look Busy | Brother: Y / tap — Yell | Dad: H / tap — Hide | SPACE / tap screen — Start';
+      }
+    }
+
+    function triggerCaught(wrongInput) {
+      state.visitPhase = 'caught';
+      state.phaseTimer = 1.1;
+      state.wrongInput = wrongInput;
+      state.lives--;
+      state.flash = 1;
+      state.flashColor = FLASH_RED;
+      visitor.x = CAUGHT_X;
+    }
+
+    function enterTeleport() {
+      state.screen = 'teleport';
+      state.teleportTimer = 1.1;
+      state.flash = 1;
+      state.flashColor = FLASH_WHITE;
+      updateMessage();
+      updateChrome();
+    }
+
+    function enterRunning() {
+      state.screen = 'running';
+      state.runDistance = 0;
+      state.runSpeed = RUN_BASE_SPEED;
+      state.obstacles = [];
+      state.spawnTimer = 0.6;
+      runner.jumpHeight = 0;
+      runner.vy = 0;
+      runner.onGround = true;
+      updateMessage();
+      updateChrome();
+    }
+
+    function spawnObstacle() {
+      const type = OBSTACLE_TYPES[Math.floor(Math.random() * OBSTACLE_TYPES.length)];
+      const dims = OBSTACLE_DIMS[type];
+      state.obstacles.push({ type, x: W + 10, w: dims.w, h: dims.h });
+      const gap = randRange(0.85, 1.4) - Math.min(0.35, state.runDistance * 0.0015);
+      state.spawnTimer = Math.max(0.6, gap);
+    }
+
+    function jumpRunner() {
+      if (!runner.onGround) return;
+      runner.vy = JUMP_SPEED;
+      runner.onGround = false;
+    }
+
+    function endRun(type) {
+      state.screen = 'gameover';
+      state.deathObstacle = type;
+      state.flash = 1;
+      state.flashColor = FLASH_RED;
+      if (state.runDistance > state.distanceHighScore) {
+        state.distanceHighScore = state.runDistance;
+        saveStoredNumber(DISTANCE_HIGH_SCORE_KEY, state.distanceHighScore);
+      }
+      updateMessage();
+      updateChrome();
+    }
+
+    function handleAction(type) {
+      if (state.screen !== 'playing' || state.visitPhase !== 'approaching') return;
+      if (state.visitorType === type) {
+        state.visitPhase = 'leaving';
+        state.phaseTimer = 0.8;
+        state.difficulty++;
+        state.reactionWindow = Math.max(0.85, 1.6 - state.difficulty * 0.05);
+        state.score += 25;
+      } else {
+        triggerCaught(true);
+      }
+      updateMessage();
+    }
+
+    function handleSpace() {
+      if (state.screen === 'menu' || state.screen === 'gameover') startGame();
+      else if (state.screen === 'running') jumpRunner();
+    }
+
+    document.addEventListener('keydown', e => {
+      if (e.code === 'Tab') {
+        e.preventDefault();
+        handleAction('mom');
+      } else if (e.code === 'KeyY') {
+        e.preventDefault();
+        handleAction('brother');
+      } else if (e.code === 'KeyH') {
+        e.preventDefault();
+        handleAction('dad');
+      } else if (e.code === 'Space') {
+        e.preventDefault();
+        handleSpace();
+      }
+    });
+
+    tabBtn.addEventListener('click', e => {
+      e.preventDefault();
+      handleAction('mom');
+    });
+    yellBtn.addEventListener('click', e => {
+      e.preventDefault();
+      handleAction('brother');
+    });
+    hideBtn.addEventListener('click', e => {
+      e.preventDefault();
+      handleAction('dad');
+    });
+    jumpBtn.addEventListener('click', e => {
+      e.preventDefault();
+      handleSpace();
+    });
+    canvas.addEventListener('click', () => handleSpace());
+
+    function updateBedroom(dt) {
+      if (state.visitPhase === 'hidden') {
+        state.score += dt * 10;
+        state.visitTimer -= dt;
+        if (state.visitTimer <= 0) {
+          state.visitPhase = 'warning';
+          state.phaseTimer = 0.7;
+          updateMessage();
+        }
+        return;
+      }
+
+      state.phaseTimer -= dt;
+
+      if (state.visitPhase === 'warning') {
+        if (state.phaseTimer <= 0) {
+          state.visitPhase = 'approaching';
+          state.phaseTimer = state.reactionWindow;
+          visitor.x = DOOR.x;
+          updateMessage();
+        }
+      } else if (state.visitPhase === 'approaching') {
+        const progress = 1 - Math.max(0, state.phaseTimer) / state.reactionWindow;
+        visitor.x = DOOR.x + (CAUGHT_X - DOOR.x) * progress;
+        if (state.phaseTimer <= 0) {
+          triggerCaught(false);
+          updateMessage();
+        }
+      } else if (state.visitPhase === 'caught') {
+        if (state.phaseTimer <= 0) {
+          if (state.lives <= 0) {
+            if (state.score > state.highScore) {
+              state.highScore = state.score;
+              saveStoredNumber(HIGH_SCORE_KEY, state.highScore);
+            }
+            enterTeleport();
+          } else {
+            state.visitPhase = 'hidden';
+            scheduleNextVisit();
+            updateMessage();
+          }
+        }
+      } else if (state.visitPhase === 'leaving') {
+        const progress = 1 - Math.max(0, state.phaseTimer) / 0.8;
+        visitor.x = CAUGHT_X - Math.min(1, progress * 1.3) * (CAUGHT_X - DOOR.x);
+        if (state.phaseTimer <= 0) {
+          state.visitPhase = 'hidden';
+          scheduleNextVisit();
+          updateMessage();
+        }
+      }
+    }
+
+    function updateTeleport(dt) {
+      state.teleportTimer -= dt;
+      if (state.teleportTimer <= 0) enterRunning();
+    }
+
+    function updateRunning(dt) {
+      state.runSpeed = Math.min(RUN_MAX_SPEED, RUN_BASE_SPEED + state.runDistance * 1.4);
+      state.runDistance += state.runSpeed * dt * 0.06;
+
+      runner.vy -= RUN_GRAVITY * dt;
+      runner.jumpHeight += runner.vy * dt;
+      if (runner.jumpHeight <= 0) {
+        runner.jumpHeight = 0;
+        runner.vy = 0;
+        runner.onGround = true;
+      }
+
+      state.spawnTimer -= dt;
+      if (state.spawnTimer <= 0) spawnObstacle();
+
+      for (const ob of state.obstacles) ob.x -= state.runSpeed * dt;
+      state.obstacles = state.obstacles.filter(ob => ob.x + ob.w > 0);
+
+      const hbX = RUNNER_X - RUNNER_W / 2 + 4;
+      const hbW = RUNNER_W - 8;
+      const hbY = FLOOR_Y - runner.jumpHeight - RUNNER_H + 4;
+      const hbH = RUNNER_H - 8;
+      for (const ob of state.obstacles) {
+        const oy = FLOOR_Y - ob.h;
+        if (hbX < ob.x + ob.w && hbX + hbW > ob.x && hbY < oy + ob.h && hbY + hbH > oy) {
+          endRun(ob.type);
+          return;
+        }
+      }
+    }
+
+    function update(dt) {
+      if (state.flash > 0) state.flash = Math.max(0, state.flash - dt * 2);
+      if (state.screen === 'playing') updateBedroom(dt);
+      else if (state.screen === 'teleport') updateTeleport(dt);
+      else if (state.screen === 'running') updateRunning(dt);
+    }
+
+    function drawRoom(now) {
+      ctx.fillStyle = '#111';
+      ctx.fillRect(0, 0, W, FLOOR_Y);
+      ctx.fillStyle = '#1b140f';
+      ctx.fillRect(0, FLOOR_Y, W, H - FLOOR_Y);
+
+      // Door frame
+      ctx.strokeStyle = '#5a3d24';
+      ctx.lineWidth = 6;
+      ctx.strokeRect(DOOR.x, DOOR.y, DOOR.w, DOOR.h);
+      const doorOpen = state.visitPhase !== 'hidden';
+      if (!doorOpen) {
+        ctx.fillStyle = '#6b4a2b';
+        ctx.fillRect(DOOR.x, DOOR.y, DOOR.w, DOOR.h);
+        ctx.fillStyle = '#2b1c10';
+        ctx.beginPath();
+        ctx.arc(DOOR.x + DOOR.w - 14, DOOR.y + DOOR.h / 2, 4, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = '#050505';
+        ctx.fillRect(DOOR.x, DOOR.y, DOOR.w, DOOR.h);
+      }
+
+      // Desk
+      ctx.fillStyle = '#7a4a24';
+      ctx.fillRect(DESK.x, DESK.y, DESK.w, DESK.h);
+      ctx.fillStyle = '#4d2e15';
+      ctx.fillRect(DESK.x + 10, DESK.y + DESK.h, 10, FLOOR_Y - (DESK.y + DESK.h));
+      ctx.fillRect(DESK.x + DESK.w - 20, DESK.y + DESK.h, 10, FLOOR_Y - (DESK.y + DESK.h));
+
+      // Monitor
+      ctx.fillStyle = '#222';
+      ctx.fillRect(MONITOR.x, MONITOR.y, MONITOR.w, MONITOR.h);
+      const glow = 0.4 + 0.3 * Math.abs(Math.sin(now / 220));
+      ctx.fillStyle = `rgba(80, 220, 120, ${glow})`;
+      ctx.fillRect(MONITOR.x + 6, MONITOR.y + 6, MONITOR.w - 12, MONITOR.h - 12);
+      ctx.fillStyle = '#333';
+      ctx.fillRect(MONITOR.x + MONITOR.w / 2 - 6, MONITOR.y + MONITOR.h, 12, 14);
+
+      drawPlayer(now);
+      drawActionEffect(now);
+    }
+
+    function drawPlayer(now) {
+      let crouch = 0;
+      if (state.visitPhase === 'leaving' && state.visitorType === 'dad') {
+        const t = 1 - Math.max(0, state.phaseTimer) / 0.8;
+        crouch = Math.sin(Math.min(1, t * 1.6) * Math.PI) * 16;
+      }
+      ctx.fillStyle = '#e0b088';
+      ctx.beginPath();
+      ctx.arc(PLAYER.x, PLAYER.y - 20 + crouch, 13, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#3355aa';
+      ctx.fillRect(PLAYER.x - 14, PLAYER.y - 8 + crouch, 28, Math.max(6, 34 - crouch));
+    }
+
+    function drawActionEffect(now) {
+      if (state.visitPhase !== 'leaving') return;
+      const t = 1 - Math.max(0, state.phaseTimer) / 0.8;
+      const fade = 1 - t;
+
+      if (state.visitorType === 'mom') {
+        ctx.strokeStyle = `rgba(90, 220, 130, ${Math.max(0.35, fade)})`;
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        for (let i = 0; i < 4; i++) {
+          const bob = Math.sin(now / 40 + i * 1.7) * 8;
+          const hx = PLAYER.x - 16 + i * 11;
+          ctx.beginPath();
+          ctx.moveTo(hx, PLAYER.y + 12 + bob * 0.5);
+          ctx.lineTo(hx + 3, PLAYER.y + 3 + bob * 0.5);
+          ctx.stroke();
+        }
+        ctx.lineCap = 'butt';
+      } else if (state.visitorType === 'brother') {
+        ctx.strokeStyle = `rgba(74, 144, 217, ${fade})`;
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 3; i++) {
+          const r = 12 + i * 9 + t * 18;
+          ctx.beginPath();
+          ctx.arc(PLAYER.x + 16, PLAYER.y - 22, r, -0.55, 0.55);
+          ctx.stroke();
+        }
+      } else if (state.visitorType === 'dad') {
+        ctx.strokeStyle = `rgba(224, 168, 60, ${fade})`;
+        ctx.lineWidth = 2;
+        const dashY = PLAYER.y + 2;
+        for (let i = 0; i < 4; i++) {
+          const dx = PLAYER.x - 24 + i * 16;
+          ctx.beginPath();
+          ctx.moveTo(dx, dashY);
+          ctx.lineTo(dx + 8, dashY);
+          ctx.stroke();
+        }
+      }
+    }
+
+    function drawMomSprite(x, y) {
+      ctx.fillStyle = '#c23b6e';
+      ctx.beginPath();
+      ctx.moveTo(x, y - 60);
+      ctx.lineTo(x - 18, y);
+      ctx.lineTo(x + 18, y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#e0b088';
+      ctx.beginPath();
+      ctx.arc(x, y - 72, 13, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#7a2b2b';
+      ctx.beginPath();
+      ctx.arc(x, y - 78, 14, Math.PI, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawBrotherSprite(x, y) {
+      ctx.fillStyle = '#4a90d9';
+      ctx.fillRect(x - 15, y - 54, 30, 54);
+      ctx.fillStyle = '#e0b088';
+      ctx.beginPath();
+      ctx.arc(x, y - 64, 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#241b12';
+      ctx.fillRect(x - 12, y - 76, 24, 8);
+    }
+
+    function drawDadSprite(x, y) {
+      ctx.fillStyle = '#5b6b7a';
+      ctx.fillRect(x - 17, y - 58, 34, 58);
+      ctx.fillStyle = '#7a3a3a';
+      ctx.fillRect(x - 3, y - 58, 6, 26);
+      ctx.fillStyle = '#e0b088';
+      ctx.beginPath();
+      ctx.arc(x, y - 70, 13, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#9a9a9a';
+      ctx.beginPath();
+      ctx.arc(x, y - 76, 14, Math.PI, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#6b6b6b';
+      ctx.fillRect(x - 7, y - 65, 14, 3);
+    }
+
+    const VISITOR_SPRITE = { mom: drawMomSprite, brother: drawBrotherSprite, dad: drawDadSprite };
+
+    function drawVisitor() {
+      if (state.visitPhase === 'hidden') return;
+
+      if (state.visitPhase === 'warning') {
+        if (state.score < WARNING_ICON_HIDE_SCORE) {
+          ctx.fillStyle = VISITOR_COLOR[state.visitorType];
+          ctx.font = 'bold 28px Courier New';
+          ctx.textAlign = 'center';
+          const bob = Math.sin(performance.now() / 100) * 4;
+          ctx.fillText('!', DOOR.x + DOOR.w / 2, DOOR.y - 14 + bob);
+        }
+        return;
+      }
+
+      const y = FLOOR_Y - 4;
+      VISITOR_SPRITE[state.visitorType](visitor.x, y);
+
+      if (state.visitPhase === 'approaching') {
+        const pct = Math.max(0, state.phaseTimer) / state.reactionWindow;
+        const barW = 200;
+        const barX = W / 2 - barW / 2;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(barX, 18, barW, 10);
+        ctx.fillStyle = pct > 0.35 ? VISITOR_COLOR[state.visitorType] : '#e05353';
+        ctx.fillRect(barX, 18, barW * pct, 10);
+      }
+    }
+
+    function drawRunnerSprite(now) {
+      const footY = FLOOR_Y - runner.jumpHeight;
+      const topY = footY - RUNNER_H;
+
+      ctx.fillStyle = '#e0b088';
+      ctx.beginPath();
+      ctx.arc(RUNNER_X, topY + 8, 10, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#3355aa';
+      ctx.fillRect(RUNNER_X - RUNNER_W / 2, topY + 16, RUNNER_W, RUNNER_H - 30);
+
+      const legLen = 14;
+      const stride = runner.onGround ? Math.sin(now / 60) * 6 : 2;
+      ctx.fillStyle = '#2a3f7a';
+      ctx.fillRect(RUNNER_X - 9, footY - legLen - Math.max(0, stride), 6, legLen + Math.max(0, stride));
+      ctx.fillRect(RUNNER_X + 3, footY - legLen - Math.max(0, -stride), 6, legLen + Math.max(0, -stride));
+    }
+
+    function drawObstacle(ob) {
+      const y = FLOOR_Y - ob.h;
+      if (ob.type === 'pothole') {
+        ctx.fillStyle = '#050505';
+        ctx.beginPath();
+        ctx.ellipse(ob.x + ob.w / 2, FLOOR_Y - ob.h / 2, ob.w / 2, ob.h / 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (ob.type === 'hydrant') {
+        ctx.fillStyle = '#c23b3b';
+        ctx.fillRect(ob.x, y, ob.w, ob.h);
+        ctx.fillStyle = '#7a1f1f';
+        ctx.fillRect(ob.x - 2, y, ob.w + 4, 6);
+      } else if (ob.type === 'car') {
+        ctx.fillStyle = '#b23c3c';
+        ctx.fillRect(ob.x, y, ob.w, ob.h);
+        ctx.fillStyle = '#111';
+        ctx.beginPath();
+        ctx.arc(ob.x + 10, y + ob.h, 6, 0, Math.PI * 2);
+        ctx.arc(ob.x + ob.w - 10, y + ob.h, 6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawOutsideScene(now) {
+      ctx.fillStyle = '#05070c';
+      ctx.fillRect(0, 0, W, FLOOR_Y);
+
+      for (let i = 0; i < STAR_POSITIONS.length; i++) {
+        const s = STAR_POSITIONS[i];
+        ctx.globalAlpha = 0.3 + 0.3 * Math.abs(Math.sin(now / 500 + i));
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(s.x, s.y, 2, 2);
+      }
+      ctx.globalAlpha = 1;
+
+      const scroll = state.runDistance * 6;
+      const houseSpacing = 140;
+      for (let i = -1; i < W / houseSpacing + 2; i++) {
+        const hx = i * houseSpacing - (scroll * 0.3) % houseSpacing;
+        ctx.fillStyle = '#12161f';
+        ctx.fillRect(hx, FLOOR_Y - 90, 90, 90);
+        ctx.fillStyle = '#242b40';
+        ctx.fillRect(hx + 20, FLOOR_Y - 70, 16, 16);
+        ctx.fillRect(hx + 54, FLOOR_Y - 70, 16, 16);
+      }
+
+      ctx.fillStyle = '#3a352c';
+      ctx.fillRect(0, FLOOR_Y, W, H - FLOOR_Y);
+      ctx.strokeStyle = '#2a271f';
+      ctx.lineWidth = 2;
+      const crackSpacing = 60;
+      for (let x = -(scroll % crackSpacing); x < W; x += crackSpacing) {
+        ctx.beginPath();
+        ctx.moveTo(x, FLOOR_Y);
+        ctx.lineTo(x, H);
+        ctx.stroke();
+      }
+
+      for (const ob of state.obstacles) drawObstacle(ob);
+      drawRunnerSprite(now);
+    }
+
+    function drawHud() {
+      const outside = state.screen === 'teleport' || state.screen === 'running' || state.screen === 'gameover';
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#fff';
+      ctx.font = '16px Courier New';
+      if (outside) {
+        ctx.fillText(`Distance: ${Math.floor(state.runDistance)}m`, 14, 30);
+        ctx.fillText(`Best: ${Math.floor(state.distanceHighScore)}m`, 14, 50);
+      } else {
+        ctx.fillText(`Screen Time: ${Math.floor(state.score)}s`, 14, 30);
+        ctx.fillText(`High Score: ${Math.floor(state.highScore)}s`, 14, 50);
+
+        for (let i = 0; i < 3; i++) {
+          const bx = W - 30 - i * 26;
+          const by = 26;
+          ctx.fillStyle = i < state.lives ? '#4caf50' : '#333';
+          ctx.beginPath();
+          ctx.moveTo(bx, by - 14);
+          ctx.lineTo(bx - 7, by + 6);
+          ctx.lineTo(bx + 7, by + 6);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+
+      if (state.flash > 0) {
+        ctx.fillStyle = `rgba(${state.flashColor}, ${state.flash * 0.35})`;
+        ctx.fillRect(0, 0, W, H);
+      }
+
+      if (state.screen === 'menu' || state.screen === 'gameover') {
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 36px Courier New';
+        ctx.fillText('TOUCH GRASS', W / 2, H / 2 - 10);
+      } else if (state.screen === 'teleport') {
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 34px Courier New';
+        ctx.fillText('RUN FROM HOME!', W / 2, H / 2 - 10);
+      }
+    }
+
+    function draw(now) {
+      const outside = state.screen === 'teleport' || state.screen === 'running' || state.screen === 'gameover';
+      if (outside) {
+        drawOutsideScene(now);
+      } else {
+        drawRoom(now);
+        drawVisitor();
+      }
+      drawHud();
+    }
+
+    let last = performance.now();
+    function loop(now) {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      update(dt);
+      draw(now);
+      requestAnimationFrame(loop);
+    }
+
+    updateMessage();
+    updateChrome();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
