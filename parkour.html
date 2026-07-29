@@ -7,24 +7,24 @@
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #10141c;
+    background: #0a0f0a;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     height: 100vh;
     font-family: 'Courier New', monospace;
-    color: #eee;
+    color: #dce8d5;
   }
   canvas {
-    border: 2px solid #444;
+    border: 2px solid #3a4a2e;
     display: block;
-    background: #1a2030;
+    background: #0c1811;
   }
   #ui {
     margin-top: 10px;
     font-size: 13px;
-    color: #99a;
+    color: #8ba07c;
     text-align: center;
     max-width: 960px;
   }
@@ -499,7 +499,7 @@ function drawSpike(s) {
   if (s.w <= 0) return;
   const count = Math.max(1, Math.round(s.w / 20));
   const step = s.w / count;
-  ctx.fillStyle = '#e04b4b';
+  ctx.fillStyle = '#8a3a2b';
   for (let i = 0; i < count; i++) {
     ctx.beginPath();
     ctx.moveTo(s.x + i * step, s.y + s.h);
@@ -566,36 +566,151 @@ function drawFrog(p) {
   ctx.restore();
 }
 
+function hash(i) {
+  const x = Math.sin(i * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+// All background layers are drawn in screen space using an explicit
+// parallax factor (1 = moves exactly with the camera, 0 = fixed to the sky)
+// rather than via ctx.translate, so each layer's scroll speed is independent
+// of the main world transform used for gameplay objects.
+function drawSwampBackground(lvl, t) {
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#0c1811');
+  sky.addColorStop(0.6, '#1c2a17');
+  sky.addColorStop(1, '#3c4522');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+
+  const groundY = lvl.height - 210;
+
+  drawFogLayer(groundY, t);
+  drawTreeLayer(groundY, 0.3, '#152016', 220, t);   // far, slow-moving trees
+  drawTreeLayer(groundY, 0.55, '#20301f', 170, t);  // nearer, faster trees
+}
+
+function drawFogLayer(groundY, t) {
+  const parallax = 0.12;
+  const spacing = 420;
+  const drift = (t * 8) % spacing;
+  const camOffset = game.camX * parallax - drift;
+  const iMin = Math.floor((camOffset - spacing) / spacing);
+  const iMax = Math.ceil((camOffset + W + spacing) / spacing);
+  const camOffY = game.camY * parallax;
+
+  for (let i = iMin; i <= iMax; i++) {
+    const sx = i * spacing - camOffset;
+    const sy = groundY + 90 + Math.sin(i * 1.7) * 20 - camOffY;
+    const fog = ctx.createRadialGradient(sx, sy, 10, sx, sy, 260);
+    fog.addColorStop(0, 'rgba(150, 175, 120, 0.14)');
+    fog.addColorStop(1, 'rgba(150, 175, 120, 0)');
+    ctx.fillStyle = fog;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, 260, 90, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawTreeLayer(groundY, parallax, color, spacing, t) {
+  const camOffX = game.camX * parallax;
+  const camOffY = game.camY * parallax;
+  const iMin = Math.floor((camOffX - spacing) / spacing);
+  const iMax = Math.ceil((camOffX + W + spacing) / spacing);
+  const groundYScreen = groundY - camOffY;
+
+  for (let i = iMin; i <= iMax; i++) {
+    const bx = i * spacing - camOffX;
+    const trunkH = 140 + hash(i + parallax * 10) * 90;
+    const topY = groundYScreen - trunkH;
+    const sway = Math.sin(t * 0.4 + i) * 3;
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 10 + hash(i) * 6;
+    ctx.beginPath();
+    ctx.moveTo(bx, groundYScreen + 220);
+    ctx.quadraticCurveTo(bx + sway * 2, topY + trunkH * 0.5, bx + sway, topY);
+    ctx.stroke();
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(bx + sway, topY, spacing * 0.42, 46, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // hanging moss
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    for (let m = 0; m < 3; m++) {
+      const mx = bx + sway - spacing * 0.25 + m * (spacing * 0.25);
+      const mLen = 20 + hash(i * 3 + m) * 30;
+      ctx.beginPath();
+      ctx.moveTo(mx, topY + 20);
+      ctx.quadraticCurveTo(mx + Math.sin(t * 0.6 + m) * 6, topY + 20 + mLen * 0.6, mx, topY + 20 + mLen);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawFireflies(lvl, t) {
+  for (let i = 0; i < 26; i++) {
+    const bx = hash(i) * (lvl.width + 400) - 200;
+    const baseY = hash(i + 100) * lvl.height;
+    const by = baseY + Math.sin(t * 1.3 + i * 3.1) * 14;
+    const glow = 0.4 + 0.6 * Math.abs(Math.sin(t * 2 + i * 5.2));
+    ctx.fillStyle = `rgba(210, 255, 140, ${0.5 * glow})`;
+    ctx.beginPath();
+    ctx.arc(bx, by, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `rgba(230, 255, 190, ${0.9 * glow})`;
+    ctx.beginPath();
+    ctx.arc(bx, by, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function draw() {
   const lvl = currentLevel();
-  ctx.fillStyle = '#1a2030';
-  ctx.fillRect(0, 0, W, H);
+  const bgTime = performance.now() / 1000;
+
+  drawSwampBackground(lvl, bgTime);
 
   ctx.save();
   ctx.translate(-game.camX, -game.camY);
 
-  // parallax background dots
-  ctx.fillStyle = '#232a3d';
-  const parX = game.camX * 0.4;
-  for (let i = -1; i < 20; i++) {
-    ctx.fillRect(i * 140 - (parX % 140) + game.camX * 0.4, H - 200, 60, 200);
-  }
+  drawFireflies(lvl, bgTime);
 
-  // platforms
-  ctx.fillStyle = '#4c6ef5';
+  // platforms - moss-capped bog wood
   for (const p of lvl.platforms) {
-    ctx.fillStyle = '#5a6b8c';
+    ctx.fillStyle = '#3d2f22';
     ctx.fillRect(p.x, p.y, p.w, p.h);
-    ctx.fillStyle = '#7c8db3';
-    ctx.fillRect(p.x, p.y, p.w, 4);
+    ctx.fillStyle = '#5a4230';
+    ctx.fillRect(p.x, p.y + p.h - 4, p.w, 4);
+    ctx.fillStyle = '#6f8f4a';
+    ctx.fillRect(p.x, p.y, p.w, 5);
+    ctx.fillStyle = '#84a85c';
+    for (let m = 0; m < p.w; m += 18) {
+      const mh = 3 + hash(p.x + m) * 5;
+      ctx.fillRect(p.x + m, p.y - mh + 5, 8, mh);
+    }
   }
 
-  // moving platforms
+  // moving platforms - drifting lily pads
   for (const p of lvl.movingPlatforms) {
-    ctx.fillStyle = '#c98a3a';
-    ctx.fillRect(p.x, p.y, p.w, p.h);
-    ctx.fillStyle = '#f0b25c';
-    ctx.fillRect(p.x, p.y, p.w, 4);
+    ctx.fillStyle = '#1f5c46';
+    ctx.beginPath();
+    ctx.ellipse(p.x + p.w / 2, p.y + p.h / 2, p.w / 2, p.h / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#3f9270';
+    ctx.beginPath();
+    ctx.ellipse(p.x + p.w / 2, p.y + p.h / 2 - 3, p.w / 2 - 6, p.h / 2 - 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#1f5c46';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(p.x + p.w / 2, p.y + 2);
+    ctx.lineTo(p.x + p.w / 2, p.y + p.h / 2);
+    ctx.lineTo(p.x + p.w - 6, p.y + p.h / 2 + 2);
+    ctx.stroke();
   }
 
   // spikes
