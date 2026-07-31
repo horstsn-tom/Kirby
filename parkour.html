@@ -5,31 +5,157 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Robot Parkour</title>
 <style>
+  :root {
+    --bg-deep: #0b0f1a;
+    --bg-panel: rgba(14, 19, 32, 0.94);
+    --border: #3a4a66;
+    --border-soft: #263248;
+    --text: #e8ecf4;
+    --text-dim: #8896ab;
+    --text-dimmer: #5c6a82;
+    --accent: #7fd7ff;
+    --accent-glow: rgba(127, 215, 255, 0.5);
+    --gold: #ffd76f;
+    --danger: #ff5a5a;
+    --success: #5cff9d;
+    --clone: #4fc3ff;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
   body {
-    background: linear-gradient(#0b0f1a, #131a2a);
+    background: linear-gradient(var(--bg-deep), #131a2a);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     min-height: 100vh;
-    font-family: 'Courier New', monospace;
-    color: #e8ecf4;
+    font-family: 'Courier New', ui-monospace, Menlo, Consolas, monospace;
+    color: var(--text);
   }
   h1 {
     margin-bottom: 8px;
     font-size: 22px;
-    letter-spacing: 2px;
-    color: #7fd7ff;
-    text-shadow: 0 0 8px rgba(127,215,255,0.5);
+    letter-spacing: 3px;
+    color: var(--accent);
+    text-shadow: 0 0 8px var(--accent-glow);
+  }
+  #stage {
+    position: relative;
+    width: 960px;
+    max-width: 96vw;
   }
   canvas {
-    border: 2px solid #3a4a66;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 960 / 540;
+    border: 2px solid var(--border);
     border-radius: 6px;
     display: block;
     background: #101625;
-    box-shadow: 0 0 30px rgba(0,0,0,0.5);
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
   }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .panel {
+    pointer-events: auto;
+    width: min(480px, 90%);
+    max-height: 88%;
+    overflow-y: auto;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 22px 26px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+  }
+  .panel.hidden { display: none; }
+  .panel h2 {
+    font-size: 18px;
+    letter-spacing: 1.5px;
+    color: var(--accent);
+    text-shadow: 0 0 8px var(--accent-glow);
+    text-align: center;
+    margin-bottom: 4px;
+    text-wrap: balance;
+  }
+  .panel .sub {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-bottom: 16px;
+  }
+  .btn {
+    display: block;
+    width: 100%;
+    background: #1a2438;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    padding: 10px 14px;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+    text-align: center;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); box-shadow: 0 0 12px rgba(127, 215, 255, 0.25); }
+  .btn:active:not(:disabled) { transform: scale(0.98); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn.ghost { background: transparent; color: var(--text-dim); }
+  .level-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+  .level-btn {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    background: #1a2438;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    padding: 12px 14px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .level-btn:hover:not(:disabled) { border-color: var(--accent); box-shadow: 0 0 12px rgba(127, 215, 255, 0.25); }
+  .level-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .level-btn.locked { opacity: 0.45; cursor: not-allowed; }
+  .level-best { color: var(--text-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .menu-actions { display: flex; flex-direction: column; gap: 0; }
+  .battery-count { color: var(--gold); font-variant-numeric: tabular-nums; }
+  .battery-count.top { text-align: center; font-size: 15px; margin-bottom: 14px; }
+  .upgrade-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+  .upgrade-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    background: #141d30;
+    border: 1px solid var(--border-soft);
+    border-radius: 5px;
+    padding: 10px 12px;
+  }
+  .upgrade-name { font-size: 13px; }
+  .upgrade-desc { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .pips { margin-left: 8px; display: inline-flex; gap: 3px; vertical-align: middle; }
+  .pip { width: 8px; height: 8px; border: 1px solid var(--border); display: inline-block; border-radius: 1px; }
+  .pip.filled { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 4px var(--accent-glow); }
+  .buy-btn { width: auto; flex-shrink: 0; margin-top: 0; padding: 8px 12px; color: var(--gold); }
+  .stats { display: flex; justify-content: space-around; margin-bottom: 16px; font-size: 13px; }
+  .stats div { text-align: center; color: var(--text-dim); }
+  .stats b { display: block; font-size: 17px; color: var(--text); font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .complete-actions { display: flex; flex-direction: column; }
   #hud {
     display: flex;
     justify-content: space-between;
@@ -37,26 +163,31 @@
     max-width: 96vw;
     margin-top: 8px;
     font-size: 13px;
-    color: #9fb3d1;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    flex-wrap: wrap;
+    gap: 4px 14px;
   }
   #ui {
     margin-top: 10px;
     font-size: 13px;
-    color: #8896ab;
+    color: var(--text-dim);
     text-align: center;
     line-height: 1.6;
+    max-width: 960px;
   }
   #message {
     margin-top: 6px;
-    font-size: 20px;
-    min-height: 26px;
+    font-size: 15px;
+    min-height: 20px;
     text-align: center;
-    color: #7fd7ff;
-    text-shadow: 0 0 10px rgba(127,215,255,0.6);
+    color: var(--success);
+    text-shadow: 0 0 8px rgba(92, 255, 157, 0.5);
+    transition: opacity 0.3s;
   }
   .key {
     background: #1e2740;
-    border: 1px solid #3a4a66;
+    border: 1px solid var(--border);
     border-radius: 4px;
     padding: 1px 6px;
     color: #cfe3ff;
@@ -65,292 +196,666 @@
 </head>
 <body>
   <h1>ROBOT PARKOUR</h1>
-  <canvas id="game" width="960" height="540"></canvas>
+  <div id="stage">
+    <canvas id="game" width="960" height="540"></canvas>
+    <div id="overlay">
+      <div id="panel-menu" class="panel"></div>
+      <div id="panel-shop" class="panel hidden"></div>
+      <div id="panel-pause" class="panel hidden"></div>
+      <div id="panel-complete" class="panel hidden"></div>
+    </div>
+  </div>
   <div id="hud">
     <span id="timer">Time: 0.0s</span>
     <span id="deaths">Deaths: 0</span>
-    <span id="clone-status">Clone: ready</span>
+    <span id="clone-status">Clones: 0/1</span>
+    <span id="battery-hud" class="battery-count">🔋 0</span>
   </div>
   <div id="message"></div>
   <div id="ui">
-    <span class="key">A</span>/<span class="key">D</span> or <span class="key">◀</span>/<span class="key">▶</span> move &nbsp;|&nbsp;
+    <span class="key">A</span>/<span class="key">D</span> move &nbsp;|&nbsp;
     <span class="key">SPACE</span> jump &nbsp;|&nbsp;
-    <span class="key">E</span> drop clone &nbsp;|&nbsp;
-    jump again in mid-air near your clone for a <b>double jump</b> &nbsp;|&nbsp;
-    <span class="key">R</span> restart
+    <span class="key">E</span> drop clone, jump again near it for a <b>double jump</b> &nbsp;|&nbsp;
+    <span class="key">P</span> pause &nbsp;|&nbsp;
+    <span class="key">R</span> restart &nbsp;|&nbsp;
+    <span class="key">M</span> mute
   </div>
 
 <script>
+// =======================================================================
+// Constants
+// =======================================================================
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const messageEl = document.getElementById('message');
 const timerEl = document.getElementById('timer');
 const deathsEl = document.getElementById('deaths');
 const cloneStatusEl = document.getElementById('clone-status');
+const batteryHudEl = document.getElementById('battery-hud');
+const panelMenu = document.getElementById('panel-menu');
+const panelShop = document.getElementById('panel-shop');
+const panelPause = document.getElementById('panel-pause');
+const panelComplete = document.getElementById('panel-complete');
+const overlay = document.getElementById('overlay');
 
 const W = canvas.width, H = canvas.height;
 const GRAVITY = 0.65;
-const MOVE_SPEED = 5;
-const JUMP_VELOCITY = -13.5;
-const CLONE_JUMP_VELOCITY = -14.5;
-const CLONE_REACH = 170; // how far from the clone you can still jump off it
+const BASE_MOVE_SPEED = 5;
+const BASE_JUMP_VELOCITY = -13.5;
+const BASE_CLONE_REACH = 170;
 const PLAYER_W = 28, PLAYER_H = 40;
 
-// ---------- Level ----------
-// Max single-jump horizontal range is ~208px, so gaps under ~150px are single-jump
-// crossable and gaps at 280px+ require a clone double jump to clear.
-// platforms: solid ground/blocks. hazards: spikes (death). goal: win zone.
-const platforms = [
-  { x: 0,    y: 460, w: 480, h: 80 },                  // start area
-  { x: 560,  y: 460, w: 120, h: 80 },                  // gap 80 (single jump)
-  { x: 760,  y: 460, w: 120, h: 80 },                  // gap 80 (single jump)
-  { x: 980,  y: 410, w: 100, h: 20 },                  // gap 100, step up (single jump)
-  // big gap: needs clone double jump
-  { x: 1380, y: 410, w: 140, h: 140 },
-  { x: 1650, y: 350, w: 110, h: 20 },                  // gap 130, step up (single jump)
-  { x: 1870, y: 290, w: 110, h: 20 },                  // gap 110, step up (single jump)
-  { x: 2200, y: 460, w: 260, h: 80 },                  // gap 220, big drop (single jump w/ fall assist)
-  // gap over spikes: needs clone double jump
-  { x: 2740, y: 380, w: 90,  h: 80 },
-  { x: 2960, y: 300, w: 90,  h: 20 },                  // gap 130, step up (single jump)
-  { x: 3180, y: 380, w: 90,  h: 20 },                  // gap 130, step down (single jump)
-  // final long gap: needs clone double jump
-  { x: 3600, y: 460, w: 400, h: 80 },
+// =======================================================================
+// Save data & upgrades
+// =======================================================================
+const SAVE_KEY = 'robotParkourSaveV2';
+
+function loadSave() {
+  const fallback = { batteries: 0, upgrades: { jump: 0, speed: 0, reach: 0, clones: 0 }, bestTimes: {}, unlocked: 1, muted: false };
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return Object.assign({}, fallback, parsed, { upgrades: Object.assign({}, fallback.upgrades, parsed.upgrades) });
+  } catch {
+    return fallback;
+  }
+}
+let save = loadSave();
+function persist() { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }
+
+const UPGRADES = {
+  jump:   { label: 'Jump Power',        desc: '+8% jump height per tier',        max: 3, cost: [4, 8, 14], effect: t => 1 + t * 0.08 },
+  speed:  { label: 'Speed Boost',       desc: '+8% move speed per tier',         max: 3, cost: [4, 8, 14], effect: t => 1 + t * 0.08 },
+  reach:  { label: 'Clone Reach',       desc: '+25% clone-jump radius per tier', max: 3, cost: [3, 6, 10], effect: t => 1 + t * 0.25 },
+  clones: { label: 'Extra Clone Charge', desc: 'Carry +1 clone at once per tier', max: 2, cost: [10, 18], effect: t => 1 + t },
+};
+
+function effectiveMoveSpeed() { return BASE_MOVE_SPEED * UPGRADES.speed.effect(save.upgrades.speed); }
+function effectiveJumpVelocity() { return BASE_JUMP_VELOCITY * UPGRADES.jump.effect(save.upgrades.jump); }
+function effectiveCloneReach() { return BASE_CLONE_REACH * UPGRADES.reach.effect(save.upgrades.reach); }
+function effectiveMaxClones() { return UPGRADES.clones.effect(save.upgrades.clones); }
+
+function buyUpgrade(key) {
+  const cfg = UPGRADES[key];
+  const tier = save.upgrades[key];
+  if (tier >= cfg.max) return;
+  const cost = cfg.cost[tier];
+  if (save.batteries < cost) return;
+  save.batteries -= cost;
+  save.upgrades[key] = tier + 1;
+  persist();
+  Sound.uiBuy();
+  renderShop();
+}
+
+// =======================================================================
+// Sound engine (procedural, Web Audio API — no external assets)
+// =======================================================================
+const Sound = (() => {
+  let ctx = null, masterGain = null, ambientRunning = false, ambientTimer = null, ambientStep = 0;
+  const AMBIENT_NOTES = [220, 261.6, 329.6, 392, 440, 392, 329.6, 261.6];
+
+  function ensure() {
+    if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = ctx.createGain();
+    masterGain.gain.value = save.muted ? 0 : 1;
+    masterGain.connect(ctx.destination);
+  }
+
+  function tone({ freq = 440, dur = 0.12, type = 'sine', gain = 0.15, glideTo = null, delay = 0 }) {
+    if (!ctx) return;
+    const t0 = ctx.currentTime + delay;
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t0);
+    if (glideTo) osc.frequency.exponentialRampToValueAtTime(Math.max(glideTo, 1), t0 + dur);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(gain, t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    osc.connect(g); g.connect(masterGain);
+    osc.start(t0); osc.stop(t0 + dur + 0.02);
+  }
+
+  function scheduleAmbient() {
+    if (!ambientRunning) return;
+    const freq = AMBIENT_NOTES[ambientStep % AMBIENT_NOTES.length];
+    tone({ freq, dur: 0.5, type: 'sine', gain: 0.035 });
+    tone({ freq: freq / 2, dur: 0.5, type: 'sine', gain: 0.02 });
+    ambientStep++;
+    ambientTimer = setTimeout(scheduleAmbient, 420);
+  }
+
+  return {
+    jump: () => { ensure(); tone({ freq: 420, glideTo: 640, dur: 0.12, type: 'square', gain: 0.15 }); },
+    clonePlace: () => { ensure(); tone({ freq: 300, glideTo: 500, dur: 0.1, type: 'sawtooth', gain: 0.1 }); tone({ freq: 600, dur: 0.08, type: 'sine', gain: 0.08, delay: 0.05 }); },
+    cloneJump: () => { ensure(); tone({ freq: 500, glideTo: 900, dur: 0.18, type: 'square', gain: 0.18 }); },
+    death: () => { ensure(); tone({ freq: 300, glideTo: 60, dur: 0.35, type: 'sawtooth', gain: 0.2 }); },
+    batteryPickup: () => { ensure(); tone({ freq: 700, dur: 0.08, type: 'sine', gain: 0.15 }); tone({ freq: 1000, dur: 0.1, type: 'sine', gain: 0.12, delay: 0.06 }); },
+    checkpoint: () => { ensure(); tone({ freq: 500, dur: 0.1, type: 'triangle', gain: 0.12 }); tone({ freq: 750, dur: 0.15, type: 'triangle', gain: 0.1, delay: 0.08 }); },
+    win: () => { ensure(); [523, 659, 784, 1047].forEach((f, i) => tone({ freq: f, dur: 0.22, type: 'square', gain: 0.15, delay: i * 0.11 })); },
+    uiClick: () => { ensure(); tone({ freq: 800, dur: 0.05, type: 'square', gain: 0.08 }); },
+    uiBuy: () => { ensure(); tone({ freq: 600, glideTo: 1000, dur: 0.15, type: 'square', gain: 0.15 }); },
+    startAmbient: () => { if (ambientRunning) return; ensure(); ambientRunning = true; scheduleAmbient(); },
+    setMuted: m => { if (masterGain) masterGain.gain.value = m ? 0 : 1; },
+    ensure,
+  };
+})();
+
+function toggleMute() {
+  save.muted = !save.muted;
+  persist();
+  Sound.setMuted(save.muted);
+  if (gameState === 'menu') renderMenu();
+  if (gameState === 'paused') renderPause();
+}
+
+// =======================================================================
+// Levels
+// =======================================================================
+function hashString(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+function seededRandom(seed) {
+  let s = seed >>> 0;
+  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+}
+function buildSkyline(levelWidth, seed) {
+  const rng = seededRandom(seed);
+  const buildings = [];
+  let x = -200;
+  while (x < levelWidth + 400) {
+    const w = 60 + rng() * 100;
+    const h = 80 + rng() * 220;
+    buildings.push({ x, w, h });
+    x += w + 10 + rng() * 40;
+  }
+  return buildings;
+}
+
+const LEVELS = [
+  {
+    id: 'level1', name: 'Level 1 — Rooftop Run',
+    width: 4040, startX: 40, startY: 400,
+    platforms: [
+      { x: 0,    y: 460, w: 480, h: 80 },
+      { x: 560,  y: 460, w: 120, h: 80 },
+      { x: 760,  y: 460, w: 120, h: 80 },
+      { x: 980,  y: 410, w: 100, h: 20 },
+      { x: 1380, y: 410, w: 140, h: 140 },
+      { x: 1650, y: 350, w: 110, h: 20 },
+      { x: 1870, y: 290, w: 110, h: 20 },
+      { x: 2200, y: 460, w: 260, h: 80 },
+      { x: 2740, y: 380, w: 90,  h: 80 },
+      { x: 2960, y: 300, w: 90,  h: 20 },
+      { x: 3180, y: 380, w: 90,  h: 20 },
+      { x: 3600, y: 460, w: 400, h: 80 },
+    ],
+    spikes: [
+      { x: 2560, y: 440, w: 120, h: 20 },
+      { x: 3330, y: 440, w: 220, h: 20 },
+    ],
+    goal: { x: 3900, y: 380, w: 40, h: 80 },
+    checkpoints: [
+      { x: 1420, y: 350, w: 20, h: 60, spawnX: 1420, spawnY: 370 },
+      { x: 2770, y: 320, w: 20, h: 60, spawnX: 2770, spawnY: 340 },
+    ],
+    batteries: [
+      { x: 200, y: 430 }, { x: 610, y: 430 }, { x: 810, y: 430 },
+      { x: 1020, y: 380 }, { x: 1460, y: 380 }, { x: 1700, y: 320 },
+      { x: 1920, y: 260 }, { x: 2350, y: 430 }, { x: 2780, y: 350 },
+      { x: 3700, y: 430 },
+    ],
+  },
+  {
+    id: 'level2', name: 'Level 2 — Signal Tower',
+    width: 3600, startX: 40, startY: 400,
+    platforms: [
+      { x: 0,    y: 460, w: 380, h: 80 },
+      { x: 520,  y: 460, w: 100, h: 80 },
+      { x: 700,  y: 460, w: 280, h: 80 },
+      { x: 1080, y: 400, w: 100, h: 20 },
+      { x: 1460, y: 400, w: 130, h: 140 },
+      { x: 1720, y: 340, w: 110, h: 20 },
+      { x: 1940, y: 280, w: 110, h: 20 },
+      { x: 2270, y: 460, w: 280, h: 80 },
+      { x: 2690, y: 460, w: 100, h: 80 },
+      { x: 3090, y: 460, w: 410, h: 80 },
+    ],
+    spikes: [
+      { x: 1250, y: 440, w: 140, h: 20 },
+      { x: 2100, y: 440, w: 120, h: 20 },
+      { x: 2860, y: 440, w: 180, h: 20 },
+    ],
+    goal: { x: 3380, y: 380, w: 40, h: 80 },
+    checkpoints: [
+      { x: 1500, y: 340, w: 20, h: 60, spawnX: 1500, spawnY: 360 },
+      { x: 2720, y: 400, w: 20, h: 60, spawnX: 2720, spawnY: 420 },
+    ],
+    batteries: [
+      { x: 150, y: 430 }, { x: 565, y: 430 }, { x: 900, y: 430 },
+      { x: 1120, y: 370 }, { x: 1520, y: 370 }, { x: 1770, y: 310 },
+      { x: 1990, y: 250 }, { x: 2500, y: 430 }, { x: 2730, y: 430 },
+      { x: 3300, y: 430 },
+    ],
+  },
 ];
 
-const spikes = [
-  { x: 2560, y: 440, w: 120, h: 20 },
-  { x: 3330, y: 440, w: 220, h: 20 },
-];
+for (const level of LEVELS) {
+  level._skyFar = buildSkyline(level.width, hashString(level.id + 'far'));
+  level._skyNear = buildSkyline(level.width, hashString(level.id + 'near'));
+}
 
-const goal = { x: 3900, y: 380, w: 40, h: 80 };
-const LEVEL_WIDTH = 4040;
-const START_X = 40, START_Y = 400;
-
-// ---------- State ----------
-const keys = {};
+// =======================================================================
+// Game state
+// =======================================================================
+let gameState = 'menu'; // 'menu' | 'playing' | 'paused' | 'levelComplete'
+let currentLevelIndex = 0;
+let level = null;
 let cameraX = 0;
-let startTime = performance.now();
-let elapsed = 0;
+let runElapsedMs = 0;
 let deaths = 0;
-let won = false;
-let running = true;
+let runBatteriesCollected = 0;
+let respawnPoint = { x: 0, y: 0 };
+let toastTimer = null;
 
-const player = {
-  x: START_X, y: START_Y, w: PLAYER_W, h: PLAYER_H,
-  vx: 0, vy: 0, grounded: false, facing: 1,
-};
-
-const clone = {
-  active: false, x: 0, y: 0, w: PLAYER_W, h: PLAYER_H,
-};
-
+const keys = {};
+const player = { x: 0, y: 0, w: PLAYER_W, h: PLAYER_H, vx: 0, vy: 0, grounded: false, facing: 1, runCycle: 0, squashX: 1, squashY: 1 };
+let clones = []; // { x, y, w, h }
 let particles = [];
 
-function resetPlayer() {
-  player.x = START_X; player.y = START_Y;
-  player.vx = 0; player.vy = 0; player.grounded = false; player.facing = 1;
-  clone.active = false;
-  particles = [];
-}
-
-function fullReset() {
-  resetPlayer();
-  deaths = 0;
-  won = false;
-  startTime = performance.now();
-  elapsed = 0;
-  running = true;
-  messageEl.textContent = '';
-}
-
-function die() {
-  deaths++;
-  spawnParticles(player.x + player.w / 2, player.y + player.h / 2, '#ff5a5a', 18);
-  resetPlayer();
+function showToast(text, ms = 1300) {
+  messageEl.textContent = text;
+  messageEl.style.opacity = '1';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { messageEl.style.opacity = '0'; }, ms);
 }
 
 function spawnParticles(x, y, color, count) {
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
     const speed = 1.5 + Math.random() * 3;
-    particles.push({
-      x, y,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      life: 30 + Math.random() * 15,
-      color,
-    });
+    particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 30 + Math.random() * 15, color });
   }
 }
 
+function loadLevel(index) {
+  currentLevelIndex = index;
+  level = LEVELS[index];
+  for (const cp of level.checkpoints) cp.active = false;
+  for (const b of level.batteries) b.collected = false;
+}
+
+function resetRunState() {
+  player.x = level.startX; player.y = level.startY;
+  player.vx = 0; player.vy = 0; player.grounded = false; player.facing = 1;
+  player.runCycle = 0; player.squashX = 1; player.squashY = 1;
+  respawnPoint = { x: level.startX, y: level.startY };
+  clones = [];
+  particles = [];
+  deaths = 0;
+  runElapsedMs = 0;
+  runBatteriesCollected = 0;
+  for (const cp of level.checkpoints) cp.active = false;
+  for (const b of level.batteries) b.collected = false;
+}
+
+function respawnPlayer() {
+  player.x = respawnPoint.x; player.y = respawnPoint.y;
+  player.vx = 0; player.vy = 0; player.grounded = false;
+  clones = [];
+}
+
+function die() {
+  deaths++;
+  Sound.death();
+  spawnParticles(player.x + player.w / 2, player.y + player.h / 2, '#ff5a5a', 18);
+  respawnPlayer();
+}
+
+// ---- Panel/state transitions ----
+function hideAllPanels() {
+  panelMenu.classList.add('hidden');
+  panelShop.classList.add('hidden');
+  panelPause.classList.add('hidden');
+  panelComplete.classList.add('hidden');
+}
+function showPanel(panel) { hideAllPanels(); panel.classList.remove('hidden'); }
+
+function showMenu() {
+  gameState = 'menu';
+  renderMenu();
+  showPanel(panelMenu);
+}
+function showShop() {
+  renderShop();
+  showPanel(panelShop);
+}
+function startLevel(index) {
+  if (index >= LEVELS.length) { showMenu(); return; }
+  if (index + 1 > save.unlocked) return;
+  loadLevel(index);
+  resetRunState();
+  gameState = 'playing';
+  hideAllPanels();
+  Sound.startAmbient();
+}
+function pauseGame() {
+  if (gameState !== 'playing') return;
+  gameState = 'paused';
+  renderPause();
+  showPanel(panelPause);
+}
+function resumeGame() {
+  gameState = 'playing';
+  hideAllPanels();
+}
+function restartLevel() {
+  resetRunState();
+  gameState = 'playing';
+  hideAllPanels();
+}
+function quitToMenu() { showMenu(); }
+
+function completeLevel() {
+  const timeSec = runElapsedMs / 1000;
+  const prevBest = save.bestTimes[level.id];
+  const isNewBest = prevBest == null || timeSec < prevBest;
+  if (isNewBest) save.bestTimes[level.id] = timeSec;
+  if (currentLevelIndex + 2 > save.unlocked) save.unlocked = currentLevelIndex + 2;
+  persist();
+  Sound.win();
+  gameState = 'levelComplete';
+  renderComplete({ time: timeSec, deaths, batteries: runBatteriesCollected, isNewBest });
+  showPanel(panelComplete);
+}
+
+// =======================================================================
+// UI rendering
+// =======================================================================
+function renderMenu() {
+  const rows = LEVELS.map((lvl, i) => {
+    const locked = i + 1 > save.unlocked;
+    const best = save.bestTimes[lvl.id];
+    const bestStr = best != null ? best.toFixed(1) + 's' : '--';
+    if (locked) {
+      return `<button class="level-btn locked" disabled><span>🔒 ${lvl.name}</span><span class="level-best">Locked</span></button>`;
+    }
+    return `<button class="level-btn" data-action="start-level" data-level="${i}"><span>${lvl.name}</span><span class="level-best">Best: ${bestStr}</span></button>`;
+  }).join('');
+  panelMenu.innerHTML = `
+    <h2>ROBOT PARKOUR</h2>
+    <p class="sub">Clone yourself. Jump off the clone. Don't fall.</p>
+    <div class="level-list">${rows}</div>
+    <div class="menu-actions">
+      <button class="btn" data-action="open-shop">⚙ Upgrade Shop &nbsp; <span class="battery-count">🔋 ${save.batteries}</span></button>
+      <button class="btn ghost" data-action="toggle-mute">${save.muted ? '🔇 Sound: Off' : '🔊 Sound: On'}</button>
+    </div>
+  `;
+}
+
+function renderShop() {
+  const rows = Object.entries(UPGRADES).map(([key, cfg]) => {
+    const tier = save.upgrades[key];
+    const maxed = tier >= cfg.max;
+    const cost = maxed ? null : cfg.cost[tier];
+    const afford = !maxed && save.batteries >= cost;
+    const pips = Array.from({ length: cfg.max }, (_, i) => `<span class="pip ${i < tier ? 'filled' : ''}"></span>`).join('');
+    return `
+    <div class="upgrade-row">
+      <div>
+        <div class="upgrade-name">${cfg.label}<span class="pips">${pips}</span></div>
+        <div class="upgrade-desc">${cfg.desc}</div>
+      </div>
+      <button class="btn buy-btn" ${(!afford || maxed) ? 'disabled' : ''} data-action="buy-upgrade" data-key="${key}">${maxed ? 'MAXED' : `🔋 ${cost}`}</button>
+    </div>`;
+  }).join('');
+  panelShop.innerHTML = `
+    <h2>Upgrade Shop</h2>
+    <div class="battery-count top">🔋 ${save.batteries}</div>
+    <div class="upgrade-list">${rows}</div>
+    <button class="btn ghost" data-action="back-to-menu">← Back</button>
+  `;
+}
+
+function renderPause() {
+  panelPause.innerHTML = `
+    <h2>Paused</h2>
+    <button class="btn" data-action="resume">▶ Resume</button>
+    <button class="btn" data-action="restart-level">↺ Restart Level</button>
+    <button class="btn ghost" data-action="quit-to-menu">☰ Level Select</button>
+    <button class="btn ghost" data-action="toggle-mute">${save.muted ? '🔇 Sound: Off' : '🔊 Sound: On'}</button>
+  `;
+}
+
+function renderComplete({ time, deaths, batteries, isNewBest }) {
+  const hasNext = currentLevelIndex + 1 < LEVELS.length;
+  panelComplete.innerHTML = `
+    <h2>${isNewBest ? '🏆 New Best!' : 'Level Complete'}</h2>
+    <div class="stats">
+      <div>Time<b>${time.toFixed(1)}s</b></div>
+      <div>Deaths<b>${deaths}</b></div>
+      <div>Batteries<b>+${batteries} 🔋</b></div>
+    </div>
+    <div class="complete-actions">
+      ${hasNext ? '<button class="btn" data-action="next-level">Next Level →</button>' : ''}
+      <button class="btn ${hasNext ? 'ghost' : ''}" data-action="replay-level">↺ Replay</button>
+      <button class="btn ghost" data-action="quit-to-menu">☰ Level Select</button>
+    </div>
+  `;
+}
+
+overlay.addEventListener('click', e => {
+  const el = e.target.closest('[data-action]');
+  if (!el || el.disabled) return;
+  Sound.uiClick();
+  switch (el.dataset.action) {
+    case 'start-level': startLevel(parseInt(el.dataset.level, 10)); break;
+    case 'open-shop': showShop(); break;
+    case 'back-to-menu': showMenu(); break;
+    case 'buy-upgrade': buyUpgrade(el.dataset.key); break;
+    case 'resume': resumeGame(); break;
+    case 'restart-level': restartLevel(); break;
+    case 'quit-to-menu': quitToMenu(); break;
+    case 'toggle-mute': toggleMute(); break;
+    case 'next-level': startLevel(currentLevelIndex + 1); break;
+    case 'replay-level': startLevel(currentLevelIndex); break;
+  }
+});
+
+// =======================================================================
+// Input
+// =======================================================================
 document.addEventListener('keydown', e => {
+  Sound.ensure();
   keys[e.code] = true;
   if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
     e.preventDefault();
-    tryJump();
+    if (gameState === 'playing') tryJump();
   }
   if (e.code === 'KeyE') {
     e.preventDefault();
-    tryDropClone();
+    if (gameState === 'playing') tryDropClone();
   }
   if (e.code === 'KeyR') {
     e.preventDefault();
-    fullReset();
+    if (gameState === 'playing' || gameState === 'paused') restartLevel();
+  }
+  if (e.code === 'KeyP' || e.code === 'Escape') {
+    e.preventDefault();
+    if (gameState === 'playing') pauseGame();
+    else if (gameState === 'paused') resumeGame();
+  }
+  if (e.code === 'KeyM') {
+    e.preventDefault();
+    toggleMute();
+  }
+  if (e.code === 'Enter' && gameState === 'menu') {
+    startLevel(Math.max(0, save.unlocked - 1));
   }
 });
 document.addEventListener('keyup', e => { keys[e.code] = false; });
 
 function tryJump() {
-  if (won) return;
   if (player.grounded) {
-    player.vy = JUMP_VELOCITY;
+    player.vy = effectiveJumpVelocity();
     player.grounded = false;
+    player.squashX = 0.8; player.squashY = 1.25;
+    Sound.jump();
     spawnParticles(player.x + player.w / 2, player.y + player.h, '#7fd7ff', 8);
-  } else if (clone.active) {
-    // jump off the clone if close enough
-    const dx = (player.x + player.w / 2) - (clone.x + clone.w / 2);
-    const dy = (player.y + player.h / 2) - (clone.y + clone.h / 2);
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist <= CLONE_REACH) {
-      player.vy = CLONE_JUMP_VELOCITY;
-      spawnParticles(clone.x + clone.w / 2, clone.y + clone.h / 2, '#ffd76f', 22);
-      clone.active = false;
-      updateCloneStatus();
-    }
+    return;
   }
+  if (clones.length === 0) return;
+  const reach = effectiveCloneReach();
+  let bestIdx = -1, bestDist = Infinity;
+  clones.forEach((c, i) => {
+    const dx = (player.x + player.w / 2) - (c.x + c.w / 2);
+    const dy = (player.y + player.h / 2) - (c.y + c.h / 2);
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist <= reach && dist < bestDist) { bestDist = dist; bestIdx = i; }
+  });
+  if (bestIdx === -1) return;
+  const c = clones[bestIdx];
+  player.vy = effectiveJumpVelocity() * 1.07; // clone jump slightly stronger than a plain jump
+  player.squashX = 0.75; player.squashY = 1.3;
+  Sound.cloneJump();
+  spawnParticles(c.x + c.w / 2, c.y + c.h / 2, '#ffd76f', 22);
+  clones.splice(bestIdx, 1);
 }
 
 function tryDropClone() {
-  if (won) return;
-  if (clone.active) return; // only one clone at a time
-  if (!player.grounded) return; // must be grounded to recharge a clone
-  clone.active = true;
-  clone.x = player.x;
-  clone.y = player.y;
-  spawnParticles(clone.x + clone.w / 2, clone.y + clone.h / 2, '#5adfff', 14);
-  updateCloneStatus();
+  if (!player.grounded) return; // must be grounded to add/recharge a clone
+  if (clones.length >= effectiveMaxClones()) return;
+  const c = { x: player.x, y: player.y, w: PLAYER_W, h: PLAYER_H };
+  clones.push(c);
+  Sound.clonePlace();
+  spawnParticles(c.x + c.w / 2, c.y + c.h / 2, '#5adfff', 14);
 }
 
-function updateCloneStatus() {
-  if (clone.active) {
-    cloneStatusEl.textContent = 'Clone: placed — jump again near it!';
-  } else if (player.grounded) {
-    cloneStatusEl.textContent = 'Clone: ready';
-  } else {
-    cloneStatusEl.textContent = 'Clone: used';
-  }
-}
-
-// ---------- Physics / collision ----------
+// =======================================================================
+// Physics / collision
+// =======================================================================
 function rectsOverlap(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
 function moveAndCollide(dx, dy) {
-  // horizontal
   player.x += dx;
-  for (const p of platforms) {
+  for (const p of level.platforms) {
     if (rectsOverlap(player, p)) {
       if (dx > 0) player.x = p.x - player.w;
       else if (dx < 0) player.x = p.x + p.w;
     }
   }
-  player.x = Math.max(0, Math.min(LEVEL_WIDTH - player.w, player.x));
+  player.x = Math.max(0, Math.min(level.width - player.w, player.x));
 
-  // vertical
   player.y += dy;
+  const wasGrounded = player.grounded;
   player.grounded = false;
-  for (const p of platforms) {
+  for (const p of level.platforms) {
     if (rectsOverlap(player, p)) {
-      if (dy > 0) {
-        player.y = p.y - player.h;
-        player.vy = 0;
-        player.grounded = true;
-      } else if (dy < 0) {
-        player.y = p.y + p.h;
-        player.vy = 0;
-      }
+      if (dy > 0) { player.y = p.y - player.h; player.vy = 0; player.grounded = true; }
+      else if (dy < 0) { player.y = p.y + p.h; player.vy = 0; }
     }
+  }
+  if (player.grounded && !wasGrounded) {
+    player.squashX = 1.25; player.squashY = 0.8;
+    spawnParticles(player.x + player.w / 2, player.y + player.h, '#8fa5c8', 6);
   }
 }
 
-function update(dt) {
-  if (!running) return;
+function update() {
+  if (gameState !== 'playing') return;
 
-  if (!won) {
-    // input
-    let move = 0;
-    if (keys['KeyA'] || keys['ArrowLeft']) move -= 1;
-    if (keys['KeyD'] || keys['ArrowRight']) move += 1;
-    player.vx = move * MOVE_SPEED;
-    if (move !== 0) player.facing = move;
+  let move = 0;
+  if (keys['KeyA'] || keys['ArrowLeft']) move -= 1;
+  if (keys['KeyD'] || keys['ArrowRight']) move += 1;
+  player.vx = move * effectiveMoveSpeed();
+  if (move !== 0) player.facing = move;
 
-    player.vy += GRAVITY;
-    player.vy = Math.min(player.vy, 22);
+  player.vy += GRAVITY;
+  player.vy = Math.min(player.vy, 22);
 
-    const wasGrounded = player.grounded;
-    moveAndCollide(player.vx, 0);
-    moveAndCollide(0, player.vy);
+  moveAndCollide(player.vx, 0);
+  moveAndCollide(0, player.vy);
 
-    if (player.grounded && !wasGrounded) {
-      spawnParticles(player.x + player.w / 2, player.y + player.h, '#8fa5c8', 6);
-    }
-    if (player.grounded && !clone.active) updateCloneStatus();
+  if (player.grounded && Math.abs(player.vx) > 0.1) player.runCycle += 0.35;
+  player.squashX += (1 - player.squashX) * 0.25;
+  player.squashY += (1 - player.squashY) * 0.25;
 
-    // fell off the world
-    if (player.y > H + 200) die();
+  if (player.y > H + 200) die();
 
-    // spikes
-    for (const s of spikes) {
-      if (rectsOverlap(player, s)) { die(); break; }
-    }
-
-    // goal
-    if (rectsOverlap(player, goal)) {
-      won = true;
-      messageEl.textContent = `You win! Time: ${elapsed.toFixed(1)}s — Deaths: ${deaths}. Press R to race again.`;
-    }
-
-    elapsed = (performance.now() - startTime) / 1000;
+  for (const s of level.spikes) {
+    if (rectsOverlap(player, s)) { die(); break; }
   }
 
-  // particles
-  for (const pt of particles) {
-    pt.x += pt.vx; pt.y += pt.vy; pt.vy += 0.15; pt.life--;
+  for (const cp of level.checkpoints) {
+    if (!cp.active && rectsOverlap(player, cp)) {
+      cp.active = true;
+      respawnPoint = { x: cp.spawnX, y: cp.spawnY };
+      Sound.checkpoint();
+      showToast('Checkpoint!');
+      spawnParticles(cp.x + cp.w / 2, cp.y + cp.h / 2, '#5cff9d', 12);
+    }
   }
+
+  for (const b of level.batteries) {
+    if (!b.collected && rectsOverlap(player, { x: b.x - 8, y: b.y - 10, w: 16, h: 20 })) {
+      b.collected = true;
+      save.batteries++;
+      runBatteriesCollected++;
+      persist();
+      Sound.batteryPickup();
+      showToast('+1 🔋');
+      spawnParticles(b.x, b.y, '#ffd76f', 10);
+    }
+  }
+
+  if (rectsOverlap(player, level.goal)) {
+    completeLevel();
+  }
+
+  for (const pt of particles) { pt.x += pt.vx; pt.y += pt.vy; pt.vy += 0.15; pt.life--; }
   particles = particles.filter(pt => pt.life > 0);
 
-  // camera
   const targetCam = player.x - W / 2 + player.w / 2;
-  cameraX = Math.max(0, Math.min(LEVEL_WIDTH - W, targetCam));
+  cameraX = Math.max(0, Math.min(level.width - W, targetCam));
 }
 
-// ---------- Drawing ----------
+// =======================================================================
+// Drawing
+// =======================================================================
 function drawRobot(x, y, w, h, opts) {
-  const { color, eyeColor, dashed, facing } = opts;
+  const { color, eyeColor, dashed, facing, legPhase = null, airborne = false, squashX = 1, squashY = 1 } = opts;
   ctx.save();
-  ctx.translate(x - cameraX, y);
+  ctx.translate(x - cameraX + w / 2, y + h);
+  ctx.scale(squashX, squashY);
+  ctx.translate(-w / 2, -h);
 
   if (dashed) { ctx.setLineDash([4, 4]); ctx.globalAlpha = 0.55; }
 
-  // legs
   ctx.fillStyle = color;
-  ctx.fillRect(w * 0.12, h * 0.8, w * 0.28, h * 0.2);
-  ctx.fillRect(w * 0.6, h * 0.8, w * 0.28, h * 0.2);
+  if (airborne) {
+    ctx.fillRect(w * 0.15, h * 0.78, w * 0.25, h * 0.2);
+    ctx.fillRect(w * 0.6, h * 0.78, w * 0.25, h * 0.2);
+  } else {
+    const off = legPhase != null ? Math.sin(legPhase) * h * 0.12 : 0;
+    ctx.fillRect(w * 0.12, h * 0.8 + Math.max(0, off), w * 0.28, h * 0.2 - Math.max(0, off));
+    ctx.fillRect(w * 0.6, h * 0.8 + Math.max(0, -off), w * 0.28, h * 0.2 - Math.max(0, -off));
+  }
 
-  // body
-  ctx.fillStyle = color;
   ctx.beginPath();
   ctx.roundRect(0, h * 0.28, w, h * 0.55, 5);
   ctx.fill();
 
-  // head
   ctx.beginPath();
   ctx.roundRect(w * 0.1, 0, w * 0.8, h * 0.32, 4);
   ctx.fill();
 
-  // antenna
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -362,7 +867,6 @@ function drawRobot(x, y, w, h, opts) {
   ctx.arc(w / 2, -8, 2.5, 0, Math.PI * 2);
   ctx.fill();
 
-  // eye
   ctx.fillStyle = eyeColor;
   const eyeX = facing >= 0 ? w * 0.55 : w * 0.2;
   ctx.beginPath();
@@ -373,21 +877,74 @@ function drawRobot(x, y, w, h, opts) {
   ctx.restore();
 }
 
+function drawSkyline(buildings, factor, color) {
+  ctx.fillStyle = color;
+  for (const b of buildings) {
+    const sx = b.x - cameraX * factor;
+    if (sx + b.w < 0 || sx > W) continue;
+    ctx.fillRect(sx, H - b.h, b.w, b.h);
+  }
+}
+
+function drawBattery(x, y, t) {
+  const bob = Math.sin(t * 0.05 + x) * 5;
+  const sx = x - cameraX;
+  const sy = y + bob;
+  const glow = ctx.createRadialGradient(sx, sy, 0, sx, sy, 18);
+  glow.addColorStop(0, 'rgba(255, 215, 111, 0.35)');
+  glow.addColorStop(1, 'rgba(255, 215, 111, 0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(sx - 18, sy - 18, 36, 36);
+  ctx.fillStyle = '#ffd76f';
+  ctx.beginPath();
+  ctx.roundRect(sx - 7, sy - 9, 14, 18, 2);
+  ctx.fill();
+  ctx.fillRect(sx - 3, sy - 12, 6, 3);
+  ctx.fillStyle = '#4a3300';
+  ctx.fillRect(sx - 1.5, sy - 5, 3, 10);
+}
+
+function drawCheckpoint(cp) {
+  const sx = cp.x - cameraX;
+  const color = cp.active ? '#5cff9d' : '#5a7fb8';
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(sx + cp.w / 2, cp.y);
+  ctx.lineTo(sx + cp.w / 2, cp.y + cp.h);
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(sx + cp.w / 2, cp.y);
+  ctx.lineTo(sx + cp.w / 2 + 16, cp.y + 6);
+  ctx.lineTo(sx + cp.w / 2, cp.y + 12);
+  ctx.closePath();
+  ctx.fill();
+  if (cp.active) {
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+let frameCount = 0;
 function draw() {
   ctx.clearRect(0, 0, W, H);
-
-  // parallax background grid
   ctx.fillStyle = '#101625';
   ctx.fillRect(0, 0, W, H);
+
+  drawSkyline(level._skyFar, 0.12, '#161f33');
+  drawSkyline(level._skyNear, 0.28, '#1c2740');
+
   ctx.strokeStyle = 'rgba(127,215,255,0.05)';
   ctx.lineWidth = 1;
-  const gridOffset = -(cameraX * 0.3) % 60;
+  const gridOffset = -(cameraX * 0.45) % 60;
   for (let gx = gridOffset; gx < W; gx += 60) {
     ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke();
   }
 
-  // platforms
-  for (const p of platforms) {
+  for (const p of level.platforms) {
     const sx = p.x - cameraX;
     if (sx + p.w < 0 || sx > W) continue;
     const grad = ctx.createLinearGradient(0, p.y, 0, p.y + p.h);
@@ -399,8 +956,7 @@ function draw() {
     ctx.fillRect(sx, p.y, p.w, 4);
   }
 
-  // spikes
-  for (const s of spikes) {
+  for (const s of level.spikes) {
     const sx = s.x - cameraX;
     if (sx + s.w < 0 || sx > W) continue;
     ctx.fillStyle = '#ff5a5a';
@@ -416,42 +972,55 @@ function draw() {
     }
   }
 
-  // goal
-  const gx = goal.x - cameraX;
-  if (gx + goal.w > 0 && gx < W) {
+  for (const cp of level.checkpoints) drawCheckpoint(cp);
+  for (const b of level.batteries) if (!b.collected) drawBattery(b.x, b.y, frameCount);
+
+  const gx = level.goal.x - cameraX;
+  if (gx + level.goal.w > 0 && gx < W) {
     ctx.fillStyle = '#3a4a66';
-    ctx.fillRect(gx, goal.y, 6, goal.h);
+    ctx.fillRect(gx, level.goal.y, 6, level.goal.h);
     ctx.fillStyle = '#7fd7ff';
     ctx.beginPath();
-    ctx.moveTo(gx + 6, goal.y);
-    ctx.lineTo(gx + goal.w, goal.y + 12);
-    ctx.lineTo(gx + 6, goal.y + 24);
+    ctx.moveTo(gx + 6, level.goal.y);
+    ctx.lineTo(gx + level.goal.w, level.goal.y + 12);
+    ctx.lineTo(gx + 6, level.goal.y + 24);
     ctx.closePath();
     ctx.fill();
   }
 
-  // clone-jump reach ring (only while airborne + clone active, subtle hint)
-  if (clone.active && !player.grounded) {
-    ctx.strokeStyle = 'rgba(255,215,111,0.25)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(clone.x + clone.w / 2 - cameraX, clone.y + clone.h / 2, CLONE_REACH, 0, Math.PI * 2);
-    ctx.stroke();
+  if (!player.grounded && clones.length > 0) {
+    const reach = effectiveCloneReach();
+    for (const c of clones) {
+      const dx = (player.x + player.w / 2) - (c.x + c.w / 2);
+      const dy = (player.y + player.h / 2) - (c.y + c.h / 2);
+      const inReach = Math.sqrt(dx * dx + dy * dy) <= reach;
+      ctx.strokeStyle = inReach ? 'rgba(255,215,111,0.35)' : 'rgba(255,215,111,0.12)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(c.x + c.w / 2 - cameraX, c.y + c.h / 2, reach, 0, Math.PI * 2);
+      ctx.stroke();
+      if (inReach) {
+        ctx.setLineDash([3, 4]);
+        ctx.strokeStyle = 'rgba(255,215,111,0.4)';
+        ctx.beginPath();
+        ctx.moveTo(c.x + c.w / 2 - cameraX, c.y + c.h / 2);
+        ctx.lineTo(player.x + player.w / 2 - cameraX, player.y + player.h / 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
   }
 
-  // clone
-  if (clone.active) {
-    drawRobot(clone.x, clone.y, clone.w, clone.h, {
-      color: '#4fc3ff', eyeColor: '#0d2a3a', dashed: true, facing: 1,
-    });
+  for (const c of clones) {
+    drawRobot(c.x, c.y, c.w, c.h, { color: '#4fc3ff', eyeColor: '#0d2a3a', dashed: true, facing: 1 });
   }
 
-  // player
   drawRobot(player.x, player.y, player.w, player.h, {
     color: '#e8ecf4', eyeColor: '#ff9f4f', dashed: false, facing: player.facing,
+    legPhase: player.grounded ? player.runCycle : null, airborne: !player.grounded,
+    squashX: player.squashX, squashY: player.squashY,
   });
 
-  // particles
   for (const pt of particles) {
     ctx.globalAlpha = Math.max(0, pt.life / 30);
     ctx.fillStyle = pt.color;
@@ -460,19 +1029,31 @@ function draw() {
   ctx.globalAlpha = 1;
 }
 
-function tick() {
-  const now = performance.now();
-  update(1);
-  draw();
+// =======================================================================
+// Main loop
+// =======================================================================
+let lastNow = performance.now();
+function tick(now) {
+  const dt = now - lastNow;
+  lastNow = now;
+  frameCount++;
 
-  timerEl.textContent = `Time: ${elapsed.toFixed(1)}s`;
+  if (gameState === 'playing') {
+    runElapsedMs += dt;
+    update();
+  }
+  if (level) draw();
+
+  timerEl.textContent = `Time: ${(runElapsedMs / 1000).toFixed(1)}s`;
   deathsEl.textContent = `Deaths: ${deaths}`;
-  if (!won) updateCloneStatus();
+  cloneStatusEl.textContent = `Clones: ${clones.length}/${effectiveMaxClones()}`;
+  batteryHudEl.textContent = `🔋 ${save.batteries}`;
 
   requestAnimationFrame(tick);
 }
 
-fullReset();
+Sound.setMuted(save.muted);
+showMenu();
 requestAnimationFrame(tick);
 </script>
 </body>
