@@ -177,6 +177,7 @@
     </div>
     <div class="block" style="align-items:flex-end;">
       <div id="hint">WASD / Arrows move &nbsp;·&nbsp; Mouse aims light &nbsp;·&nbsp; F toggle &nbsp;·&nbsp; Shift run</div>
+      <div id="level-indicator">Level 1</div>
       <div id="found">Notes: 0 / 3</div>
     </div>
   </div>
@@ -191,7 +192,7 @@
       and by then it's usually too late.
       <br><br>
       Find the way out. Your flashlight draws it in, so use it sparingly.
-      Running is loud.
+      Running is loud. Each floor you clear, the next one is worse.
     </p>
     <button id="startBtn">Step Inside</button>
   </div>
@@ -203,9 +204,9 @@
   </div>
 
   <div id="win" class="overlay hidden">
-    <h1 class="good">You're Out</h1>
+    <h1 class="good" id="winHeading">You're Out</h1>
     <p id="winStat" class="stat"></p>
-    <button id="retryBtnWin">Go Back In</button>
+    <button id="retryBtnWin">Descend Further</button>
   </div>
 </div>
 
@@ -224,12 +225,27 @@ const PLAYER_R = 8;
 const MONSTER_R = 9;
 const WALK_SPEED = 130;   // px/sec
 const RUN_SPEED  = 210;
-const MONSTER_WANDER_SPEED = 95;
-const MONSTER_CHASE_SPEED  = 160;
 
 const BATTERY_DRAIN_ON   = 1 / 55;  // fraction per second while flashlight on
 const BATTERY_DRAIN_OFF  = 1 / 900; // slow drain always (device is dying)
 const BATTERY_PICKUP_GAIN = 0.34;
+
+// Each level ratchets difficulty up further, capped so it never becomes
+// literally unwinnable — the first level is deliberately the gentlest.
+let level = 1;
+let LV = null;
+function levelConfig(lv){
+  const diff = Math.min(lv - 1, 6); // 0 on level 1, caps at level 7+
+  return {
+    wanderSpeed: 95 + diff * 8,
+    chaseSpeed: 160 + diff * 12,
+    hearBonus: diff * 18,
+    batteryDrainMult: 1 + diff * 0.15,
+    batteryCount: Math.max(2, 4 - Math.floor(diff / 2)),
+    lightMult: Math.max(0.62, 1 - diff * 0.06),
+    sanityMult: 1 + diff * 0.14,
+  };
+}
 
 const scene = document.getElementById('scene');
 const sctx  = scene.getContext('2d');
@@ -536,6 +552,9 @@ function randomOpenCell(minDist, maxDist){
 }
 
 function setup(){
+  LV = levelConfig(level);
+  document.getElementById('level-indicator').textContent = `Level ${level}`;
+
   bmp = genMaze();
   openCells = [];
   for (let y=0;y<BH;y++) for (let x=0;x<BW;x++) if (!bmp[y][x]) openCells.push([x,y]);
@@ -566,7 +585,7 @@ function setup(){
 
   items = [];
   const batteryCells = [];
-  for (let i=0;i<4;i++){
+  for (let i=0;i<LV.batteryCount;i++){
     const c = randomOpenCell(3, null);
     if (c) batteryCells.push(c);
   }
@@ -671,7 +690,7 @@ function playerBitmapCell(ent){
 
 function updateMonster(dt, running){
   const dist = Math.hypot(player.x-monster.x, player.y-monster.y);
-  let hearRadius = 150;
+  let hearRadius = 150 + LV.hearBonus;
   if (running) hearRadius += 130;
   if (flashlightOn) hearRadius += 70;
 
@@ -711,7 +730,7 @@ function updateMonster(dt, running){
     }
   }
 
-  const speed = monster.state === 'chase' ? MONSTER_CHASE_SPEED : MONSTER_WANDER_SPEED;
+  const speed = monster.state === 'chase' ? LV.chaseSpeed : LV.wanderSpeed;
   if (monster.path.length){
     const [tx,ty] = monster.path[0];
     const target = cellCenterPx(tx,ty);
@@ -759,7 +778,7 @@ function showNote(text){
 }
 
 function updateBattery(dt){
-  battery -= (flashlightOn ? BATTERY_DRAIN_ON : BATTERY_DRAIN_OFF) * dt;
+  battery -= (flashlightOn ? BATTERY_DRAIN_ON * LV.batteryDrainMult : BATTERY_DRAIN_OFF) * dt;
   battery = Math.max(0, battery);
   if (battery <= 0) flashlightOn = false;
   const fill = document.getElementById('battery-fill');
@@ -770,7 +789,7 @@ function updateBattery(dt){
 function updateSanity(dt, monsterDist){
   let target = flashlightOn ? 0.0006 : 0.0022;
   if (monster.state === 'chase') target += 0.02 + Math.max(0, (300-monsterDist))/300*0.05;
-  sanity -= target * dt * 60;
+  sanity -= target * LV.sanityMult * dt * 60;
   sanity = Math.max(0, Math.min(1, sanity));
   fearLevel = 1 - sanity;
   if (monster.state === 'chase') fearLevel = Math.max(fearLevel, 1 - Math.min(1, monsterDist/260));
@@ -916,7 +935,7 @@ function drawScene(){
   if (flashlightOn && battery > 0){
     const angle = Math.atan2(mouse.y-player.y, mouse.x-player.x);
     const spread = 0.5;
-    const length = 210 * (0.4 + battery*0.6);
+    const length = 210 * LV.lightMult * (0.4 + battery*0.6);
     fctx.save();
     fctx.translate(player.x, player.y);
     fctx.rotate(angle);
@@ -957,7 +976,7 @@ function isPointLit(x,y){
     const toPoint = Math.atan2(y-player.y, x-player.x);
     let diff = Math.abs(angle-toPoint);
     if (diff > Math.PI) diff = Math.PI*2-diff;
-    const length = 210 * (0.4 + battery*0.6);
+    const length = 210 * LV.lightMult * (0.4 + battery*0.6);
     if (diff < 0.5 && dp < length) return true;
   }
   return false;
@@ -1130,7 +1149,7 @@ function onLose(){
   stage.style.transform = '';
   stage.style.setProperty('--fear','0');
   const elapsed = ((performance.now()-startTime)/1000).toFixed(0);
-  document.getElementById('loseStat').textContent = `Survived ${elapsed}s · ${foundNotes}/${notes.length} notes found`;
+  document.getElementById('loseStat').textContent = `Died on level ${level} · survived ${elapsed}s · ${foundNotes}/${notes.length} notes found`;
 
   // a beat of near-silence before the hit lands, for a harder startle
   silenceBeat();
@@ -1150,6 +1169,7 @@ function onWin(){
   stage.style.transform = '';
   stage.style.setProperty('--fear','0');
   const elapsed = ((performance.now()-startTime)/1000).toFixed(0);
+  document.getElementById('winHeading').textContent = `Level ${level} Cleared`;
   document.getElementById('winStat').textContent = `Escaped in ${elapsed}s · ${foundNotes}/${notes.length} notes found`;
   document.getElementById('win').classList.remove('hidden');
   playNoise(0.6, 0.2, 2600);
@@ -1171,10 +1191,17 @@ function beginGame(){
 
 document.getElementById('startBtn').addEventListener('click', () => {
   if (!actx) initAudio();
+  level = 1;
   beginGame();
 });
-document.getElementById('retryBtnLose').addEventListener('click', beginGame);
-document.getElementById('retryBtnWin').addEventListener('click', beginGame);
+document.getElementById('retryBtnLose').addEventListener('click', () => {
+  level = 1;
+  beginGame();
+});
+document.getElementById('retryBtnWin').addEventListener('click', () => {
+  level += 1;
+  beginGame();
+});
 
 requestAnimationFrame(loop);
 })();
