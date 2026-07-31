@@ -159,6 +159,14 @@
     pointer-events:none;
     z-index:30;
   }
+
+  #scare{
+    position:absolute; top:0; left:0;
+    display:block;
+    background:transparent;
+    pointer-events:none;
+    z-index:32;
+  }
 </style>
 </head>
 <body>
@@ -168,6 +176,7 @@
   <div id="grain"></div>
   <div id="vignette"></div>
   <div id="flash"></div>
+  <canvas id="scare" width="700" height="540"></canvas>
 
   <div id="hud">
     <div class="block">
@@ -236,6 +245,8 @@ const fx    = document.createElement('canvas');
 fx.width = 700; fx.height = 540;
 const fctx  = fx.getContext('2d');
 const stage = document.getElementById('stage');
+const scareCanvas = document.getElementById('scare');
+const scareCtx = scareCanvas.getContext('2d');
 
 /* ============================= AUDIO ============================= */
 let actx = null, masterGain, droneNodes = [], noiseBuffer = null;
@@ -313,6 +324,40 @@ function playStinger(){
 function playDistant(){
   if (!actx) return;
   playNoise(1.4, 0.18, 500);
+}
+
+function playScream(){
+  if (!actx) return;
+  const t = actx.currentTime;
+
+  // shrieking noise sweep
+  const src = actx.createBufferSource();
+  src.buffer = noiseBuffer;
+  const bp = actx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 7;
+  bp.frequency.setValueAtTime(500, t);
+  bp.frequency.exponentialRampToValueAtTime(3400, t + 0.1);
+  bp.frequency.exponentialRampToValueAtTime(650, t + 0.55);
+  const ng = actx.createGain();
+  ng.gain.setValueAtTime(0.0001, t);
+  ng.gain.exponentialRampToValueAtTime(0.85, t + 0.04);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+  src.connect(bp); bp.connect(ng); ng.connect(masterGain);
+  src.start(t); src.stop(t + 0.65);
+
+  // piercing pitch-diving shriek
+  const osc = actx.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(1400, t);
+  osc.frequency.exponentialRampToValueAtTime(2800, t + 0.09);
+  osc.frequency.exponentialRampToValueAtTime(160, t + 0.55);
+  const og = actx.createGain();
+  og.gain.setValueAtTime(0.0001, t);
+  og.gain.exponentialRampToValueAtTime(0.55, t + 0.03);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+  osc.connect(og); og.connect(masterGain);
+  osc.start(t); osc.stop(t + 0.65);
 }
 
 /* ============================= MAZE GEN ============================= */
@@ -863,6 +908,119 @@ function isPointLit(x,y){
   return false;
 }
 
+/* ============================= JUMP SCARE ============================= */
+function drawScareFace(ctx, w, h){
+  const cx = w/2, cy = h/2;
+
+  const headGrad = ctx.createRadialGradient(cx, cy-20, 40, cx, cy, 340);
+  headGrad.addColorStop(0, '#3a0a0a');
+  headGrad.addColorStop(0.6, '#170404');
+  headGrad.addColorStop(1, '#000000');
+  ctx.fillStyle = headGrad;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, 260, 300, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.beginPath(); ctx.ellipse(cx-140, cy+60, 70, 110, 0.3, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+140, cy+60, 70, 110, -0.3, 0, Math.PI*2); ctx.fill();
+
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.beginPath(); ctx.ellipse(cx, cy-95, 180, 40, 0, 0, Math.PI*2); ctx.fill();
+
+  [-1,1].forEach(side => {
+    const ex = cx + side*95, ey = cy-40;
+    const eyeGrad = ctx.createRadialGradient(ex, ey, 4, ex, ey, 60);
+    eyeGrad.addColorStop(0, '#fff4e8');
+    eyeGrad.addColorStop(0.6, '#e8d2c8');
+    eyeGrad.addColorStop(1, '#7a1010');
+    ctx.fillStyle = eyeGrad;
+    ctx.beginPath();
+    ctx.ellipse(ex, ey, 58, 38, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(200,20,20,0.55)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 6; i++){
+      const a = (i/6) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(ex, ey);
+      ctx.lineTo(ex + Math.cos(a)*55, ey + Math.sin(a)*32);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = '#050000';
+    ctx.beginPath();
+    ctx.ellipse(ex, ey, 8, 30, 0, 0, Math.PI*2);
+    ctx.fill();
+  });
+
+  const mouthY = cy+140;
+  ctx.fillStyle = '#050000';
+  ctx.beginPath();
+  ctx.moveTo(cx-150, mouthY-10);
+  ctx.quadraticCurveTo(cx, mouthY+70, cx+150, mouthY-10);
+  ctx.quadraticCurveTo(cx, mouthY+30, cx-150, mouthY-10);
+  ctx.fill();
+
+  ctx.fillStyle = '#d8cfc0';
+  const teethCount = 10;
+  for (let i = 0; i < teethCount; i++){
+    const xx = cx-140 + (i/(teethCount-1))*280;
+    const th = 16 + Math.random()*10;
+    ctx.beginPath();
+    ctx.moveTo(xx-9, mouthY-6);
+    ctx.lineTo(xx+9, mouthY-6);
+    ctx.lineTo(xx, mouthY-6+th);
+    ctx.fill();
+  }
+}
+
+function runJumpScare(onComplete){
+  const total = 650;
+  const start = performance.now();
+
+  function frame(now){
+    const t = Math.min(1, (now-start)/total);
+    scareCtx.clearRect(0, 0, W, H);
+
+    const nearEnd = t > 0.82;
+    const flickerOff = nearEnd && Math.sin(t*90) <= 0;
+    if (flickerOff){
+      scareCtx.fillStyle = '#000';
+      scareCtx.fillRect(0, 0, W, H);
+    } else {
+      const shakeEnvelope = Math.max(0, 1 - Math.abs(t-0.35)*1.4);
+      const shakeMag = 14 * shakeEnvelope;
+      const jitterX = (Math.random()-0.5) * shakeMag;
+      const jitterY = (Math.random()-0.5) * shakeMag;
+      const scale = 0.82 + t*0.45;
+
+      scareCtx.save();
+      scareCtx.translate(W/2 + jitterX, H/2 + jitterY);
+      scareCtx.scale(scale, scale);
+      scareCtx.translate(-W/2, -H/2);
+      scareCtx.fillStyle = '#020202';
+      scareCtx.fillRect(-60, -60, W+120, H+120);
+      drawScareFace(scareCtx, W, H);
+      scareCtx.restore();
+    }
+
+    const glitchHue = Math.sin(t*40) * 10;
+    const invert = Math.random() < 0.05 ? ' invert(1)' : '';
+    scareCanvas.style.filter = `contrast(1.15) saturate(1.3) hue-rotate(${glitchHue.toFixed(1)}deg)${invert}`;
+
+    if (t < 1){
+      requestAnimationFrame(frame);
+    } else {
+      scareCtx.clearRect(0, 0, W, H);
+      scareCanvas.style.filter = 'none';
+      onComplete && onComplete();
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
 /* ============================= LOOP ============================= */
 function loop(ts){
   if (!lastTime) lastTime = ts;
@@ -892,15 +1050,16 @@ function loop(ts){
 
 function onLose(){
   state = 'lose';
+  playScream();
   playStinger();
   jumpScareFlash();
   stage.classList.remove('shake');
   stage.style.setProperty('--fear','0');
   const elapsed = ((performance.now()-startTime)/1000).toFixed(0);
   document.getElementById('loseStat').textContent = `Survived ${elapsed}s · ${foundNotes}/${notes.length} notes found`;
-  setTimeout(()=>{
+  runJumpScare(() => {
     document.getElementById('lose').classList.remove('hidden');
-  }, 500);
+  });
 }
 
 function onWin(){
@@ -917,6 +1076,8 @@ function onWin(){
 function beginGame(){
   setup();
   state = 'playing';
+  scareCtx.clearRect(0, 0, W, H);
+  scareCanvas.style.filter = 'none';
   document.getElementById('start').classList.add('hidden');
   document.getElementById('lose').classList.add('hidden');
   document.getElementById('win').classList.add('hidden');
