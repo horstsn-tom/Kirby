@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Duck Pond</title>
+  <title>Duck Tower</title>
   <style>
     :root {
       --bg: #060606;
@@ -108,6 +108,8 @@
 
     #duck {
       display: block;
+      max-width: 100%;
+      height: auto;
     }
 
     #msg {
@@ -143,11 +145,11 @@
 </head>
 <body>
 <div id="wrap">
-  <div id="title">DUCK POND</div>
+  <div id="title">DUCK TOWER</div>
 
   <div id="scorebar">
     <div class="score-side">
-      <div class="score-label">Ducklings</div>
+      <div class="score-label">Height</div>
       <div class="score-num" id="score">0</div>
     </div>
     <div class="score-divider"></div>
@@ -158,14 +160,13 @@
   </div>
 
   <div id="stage">
-    <canvas id="duck" width="480" height="480"></canvas>
+    <canvas id="duck" width="480" height="640"></canvas>
   </div>
 
-  <div id="msg">Press Space or Arrow Key to Start</div>
+  <div id="msg">Press Space or Click to Drop</div>
 
   <div id="controls">
-    <span class="key">↑</span><span class="key">↓</span><span class="key">←</span><span class="key">→</span>&nbsp; / &nbsp;<span class="key">WASD</span>&nbsp; Steer &nbsp;&nbsp;
-    <span class="key">Space</span>&nbsp; Restart
+    <span class="key">Space</span>&nbsp; / &nbsp;<span class="key">Click</span>&nbsp; Drop the Duckling &nbsp;&nbsp;
   </div>
 </div>
 
@@ -177,65 +178,52 @@ const bestEl = document.getElementById('best');
 const msgEl = document.getElementById('msg');
 
 const W = canvas.width, H = canvas.height;
-const CELL = 24;
-const COLS = W / CELL, ROWS = H / CELL;
+const GROUND_Y = H - 70;
+const TOP_VIEW_Y = 170;
+const BLOCK_H = 30;
+const BASE_W = 300;
+const PERFECT_TOL = 4;
 
 const STATE = { WAIT: 0, PLAY: 1, OVER: 2 };
 let state = STATE.WAIT;
 
-let best = Number(localStorage.getItem('duckPondBest') || 0);
+let best = Number(localStorage.getItem('duckTowerBest') || 0);
 bestEl.textContent = best;
 
-const DIRS = {
-  up: { x: 0, y: -1 },
-  down: { x: 0, y: 1 },
-  left: { x: -1, y: 0 },
-  right: { x: 1, y: 0 },
-};
+const PALETTE = ['#ffd23f', '#f2b400', '#fff1b8', '#e0a100'];
 
-let train = [];
-let dir = DIRS.right;
-let nextDir = DIRS.right;
-let bread = { x: 0, y: 0 };
-let score = 0;
-let frame = 0;
-let moveInterval = 9;
-let shake = 0;
-let waterFrame = 0;
+let stack, current, debris, score, cam, wobble, perfectFlash;
 
-const lilyPads = [
-  { x: 3, y: 3, r: 20, rot: 0.3 },
-  { x: 16, y: 5, r: 16, rot: 1.1 },
-  { x: 5, y: 15, r: 18, rot: 2.0 },
-  { x: 15, y: 16, r: 22, rot: 0.7 },
-];
+function newMover(w) {
+  return { x: 0, w, dir: 1, speed: 2.6 + Math.min(4.5, (stack.length - 1) * 0.12) };
+}
 
 function resetGame() {
-  train = [
-    { x: 6, y: 10 },
-    { x: 5, y: 10 },
-    { x: 4, y: 10 },
-  ];
-  dir = DIRS.right;
-  nextDir = DIRS.right;
+  stack = [{ x: (W - BASE_W) / 2, w: BASE_W, color: '#e8b04b' }];
+  current = newMover(220);
+  current.x = 0;
+  debris = [];
   score = 0;
-  frame = 0;
-  moveInterval = 9;
+  cam = 0;
+  wobble = 0;
+  perfectFlash = 0;
   scoreEl.textContent = 0;
-  placeBread();
 }
 
-function placeBread() {
-  let cell;
-  do {
-    cell = { x: Math.floor(Math.random() * COLS), y: Math.floor(Math.random() * ROWS) };
-  } while (train.some(s => s.x === cell.x && s.y === cell.y));
-  bread = cell;
+function topWorldY(index) {
+  return GROUND_Y - (index + 1) * BLOCK_H;
 }
 
-function setDir(d) {
-  if (d.x === -dir.x && d.y === -dir.y) return;
-  nextDir = d;
+function spawnDebris(x, w, index) {
+  debris.push({
+    x, w, h: BLOCK_H,
+    worldY: topWorldY(index),
+    vy: -2 - Math.random() * 2,
+    vx: (x + w / 2 < W / 2 ? -1 : 1) * (1.5 + Math.random() * 2),
+    rot: 0,
+    vrot: (Math.random() - 0.5) * 0.2,
+    color: PALETTE[index % PALETTE.length],
+  });
 }
 
 function startOrRestart() {
@@ -245,217 +233,228 @@ function startOrRestart() {
   } else if (state === STATE.OVER) {
     resetGame();
     state = STATE.WAIT;
-    msgEl.textContent = 'Press Space or Arrow Key to Start';
+    msgEl.textContent = 'Press Space or Click to Drop';
   }
 }
-
-document.addEventListener('keydown', e => {
-  const map = {
-    ArrowUp: 'up', KeyW: 'up',
-    ArrowDown: 'down', KeyS: 'down',
-    ArrowLeft: 'left', KeyA: 'left',
-    ArrowRight: 'right', KeyD: 'right',
-  };
-  if (e.code in map) {
-    e.preventDefault();
-    if (state === STATE.WAIT) { startOrRestart(); }
-    if (state === STATE.PLAY) setDir(DIRS[map[e.code]]);
-  } else if (e.code === 'Space') {
-    e.preventDefault();
-    startOrRestart();
-  }
-});
 
 function gameOver() {
   state = STATE.OVER;
-  shake = 10;
   if (score > best) {
     best = score;
-    localStorage.setItem('duckPondBest', String(best));
+    localStorage.setItem('duckTowerBest', String(best));
     bestEl.textContent = best;
   }
-  msgEl.textContent = `Game Over — ${score} Ducklings — Press Space to Restart`;
+  msgEl.textContent = `Tower Fell — Height ${score} — Press Space to Restart`;
 }
+
+function drop() {
+  const top = stack[stack.length - 1];
+  const m = current;
+  const overlapStart = Math.max(top.x, m.x);
+  const overlapEnd = Math.min(top.x + top.w, m.x + m.w);
+  const overlapW = overlapEnd - overlapStart;
+
+  if (overlapW <= 2) {
+    spawnDebris(m.x, m.w, stack.length);
+    current = null;
+    gameOver();
+    return;
+  }
+
+  const leftW = overlapStart - m.x;
+  const rightW = (m.x + m.w) - overlapEnd;
+  if (leftW > 1) spawnDebris(m.x, leftW, stack.length);
+  if (rightW > 1) spawnDebris(overlapEnd, rightW, stack.length);
+
+  const perfect = Math.abs(m.x - top.x) < PERFECT_TOL && Math.abs(m.w - top.w) < PERFECT_TOL;
+  const placedW = perfect ? top.w : overlapW;
+  const placedX = perfect ? top.x : overlapStart;
+
+  stack.push({ x: placedX, w: placedW, color: PALETTE[stack.length % PALETTE.length] });
+  score++;
+  scoreEl.textContent = score;
+  if (perfect) { perfectFlash = 14; wobble = 0; } else { wobble = 8; }
+
+  current = newMover(placedW);
+  current.x = Math.random() < 0.5 ? 0 : W - placedW;
+}
+
+function action() {
+  if (state === STATE.WAIT) { startOrRestart(); }
+  else if (state === STATE.PLAY) { drop(); }
+  else if (state === STATE.OVER) { startOrRestart(); }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); action(); }
+});
+canvas.addEventListener('mousedown', action);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); action(); }, { passive: false });
 
 function update() {
-  waterFrame += 0.02;
-  frame++;
+  if (perfectFlash > 0) perfectFlash--;
+  if (wobble > 0) wobble--;
 
-  if (state !== STATE.PLAY) return;
-  if (frame % moveInterval !== 0) return;
-
-  dir = nextDir;
-  const head = train[0];
-  const nx = head.x + dir.x, ny = head.y + dir.y;
-
-  if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) { gameOver(); return; }
-  if (train.some(s => s.x === nx && s.y === ny)) { gameOver(); return; }
-
-  train.unshift({ x: nx, y: ny });
-
-  if (nx === bread.x && ny === bread.y) {
-    score++;
-    scoreEl.textContent = score;
-    moveInterval = Math.max(4, 9 - Math.floor(score / 4));
-    placeBread();
-  } else {
-    train.pop();
+  for (const d of debris) {
+    d.vy += 0.35;
+    d.worldY += d.vy;
+    d.x += d.vx;
+    d.rot += d.vrot;
   }
+  debris = debris.filter(d => d.worldY < H + 400 + cam);
+
+  if (state !== STATE.PLAY || !current) return;
+
+  current.x += current.dir * current.speed;
+  if (current.x <= 0) { current.x = 0; current.dir = 1; }
+  if (current.x + current.w >= W) { current.x = W - current.w; current.dir = -1; }
+
+  const nextWorldY = topWorldY(stack.length);
+  cam = -Math.max(0, TOP_VIEW_Y - nextWorldY);
 }
 
-function drawWater() {
-  const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, '#2f8fc4');
-  grad.addColorStop(1, '#1b567f');
-  ctx.fillStyle = grad;
+function screenY(worldY) { return worldY - cam; }
+
+function drawSky() {
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#7fd4ff');
+  sky.addColorStop(0.6, '#bfe8ff');
+  sky.addColorStop(1, '#2f8fc4');
+  ctx.fillStyle = sky;
   ctx.fillRect(0, 0, W, H);
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= COLS; i++) {
-    ctx.beginPath();
-    ctx.moveTo(i * CELL, 0);
-    ctx.lineTo(i * CELL, H);
-    ctx.stroke();
-  }
-  for (let j = 0; j <= ROWS; j++) {
-    ctx.beginPath();
-    ctx.moveTo(0, j * CELL);
-    ctx.lineTo(W, j * CELL);
-    ctx.stroke();
-  }
-
-  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-  ctx.lineWidth = 2;
-  for (let i = 0; i < 5; i++) {
-    const y = (i * 97 + waterFrame * 14) % (H + 40) - 20;
-    ctx.beginPath();
-    for (let x = 0; x <= W; x += 8) {
-      const yy = y + Math.sin(x * 0.04 + waterFrame * 2 + i) * 3;
-      if (x === 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
-    }
-    ctx.stroke();
-  }
+  ctx.save();
+  ctx.shadowColor = 'rgba(255,230,150,0.9)';
+  ctx.shadowBlur = 36;
+  ctx.fillStyle = '#fff2b0';
+  ctx.beginPath();
+  ctx.arc(W - 60, 70, 26, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
-function drawLilyPads() {
-  for (const p of lilyPads) {
-    const cx = p.x * CELL + CELL / 2, cy = p.y * CELL + CELL / 2;
+function drawBlock(b, worldY, wobbleOffset) {
+  const y = screenY(worldY);
+  if (y > H || y + BLOCK_H < -40) return;
+  const wob = wobbleOffset ? Math.sin(wobble * 0.9) * wobbleOffset : 0;
+
+  ctx.save();
+  ctx.translate(0, wob);
+  ctx.fillStyle = b.color;
+  ctx.beginPath();
+  ctx.roundRect(b.x, y, b.w, BLOCK_H, 6);
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(b.x + 6, y + BLOCK_H * 0.35);
+  ctx.lineTo(b.x + b.w - 6, y + BLOCK_H * 0.35);
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.beginPath();
+  ctx.roundRect(b.x + 1.5, y + 1.5, b.w - 3, BLOCK_H - 3, 5);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawDebris() {
+  for (const d of debris) {
+    const y = screenY(d.worldY);
+    if (y > H + 20) continue;
     ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(p.rot);
-    ctx.fillStyle = 'rgba(60,150,80,0.55)';
+    ctx.translate(d.x + d.w / 2, y + d.h / 2);
+    ctx.rotate(d.rot);
+    ctx.globalAlpha = Math.max(0, 1 - d.worldY / (H + 300));
+    ctx.fillStyle = d.color;
     ctx.beginPath();
-    ctx.arc(0, 0, p.r, 0.35, Math.PI * 2 - 0.35);
-    ctx.lineTo(0, 0);
-    ctx.closePath();
+    ctx.roundRect(-d.w / 2, -d.h / 2, d.w, d.h, 5);
     ctx.fill();
     ctx.restore();
   }
 }
 
-function drawBread() {
-  const cx = bread.x * CELL + CELL / 2, cy = bread.y * CELL + CELL / 2;
-  const bob = Math.sin(waterFrame * 6) * 2;
+function drawDuckHead(cx, topY) {
   ctx.save();
-  ctx.shadowColor = 'rgba(255,220,150,0.8)';
-  ctx.shadowBlur = 10;
-  ctx.fillStyle = '#d99a4e';
-  ctx.beginPath();
-  ctx.ellipse(cx, cy + bob, 8, 6, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = '#c17f36';
-  ctx.beginPath();
-  ctx.arc(cx - 3, cy + bob - 1, 1.4, 0, Math.PI * 2);
-  ctx.arc(cx + 3, cy + bob + 1, 1.4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawDuckling(cx, cy, angle) {
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(angle);
-  ctx.fillStyle = '#ffd23f';
-  ctx.beginPath();
-  ctx.ellipse(0, 0, CELL * 0.42, CELL * 0.36, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#ff8c1a';
-  ctx.beginPath();
-  ctx.moveTo(CELL * 0.32, -2);
-  ctx.lineTo(CELL * 0.55, 0);
-  ctx.lineTo(CELL * 0.32, 2);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = '#1a1a1a';
-  ctx.beginPath();
-  ctx.arc(CELL * 0.18, -CELL * 0.14, 1.6, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawHead(cx, cy, angle) {
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(angle);
+  ctx.translate(cx, topY);
 
   ctx.fillStyle = '#f2b400';
   ctx.beginPath();
-  ctx.ellipse(-CELL * 0.15, CELL * 0.28, 6, 4, -0.3, 0, Math.PI * 2);
+  ctx.ellipse(-10, 10, 7, 5, -0.4, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.fillStyle = '#ffd23f';
   ctx.beginPath();
-  ctx.ellipse(0, 0, CELL * 0.5, CELL * 0.44, 0, 0, Math.PI * 2);
+  ctx.arc(0, 0, 15, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.fillStyle = '#ff8c1a';
   ctx.beginPath();
-  ctx.moveTo(CELL * 0.38, -3);
-  ctx.lineTo(CELL * 0.72, -1);
-  ctx.lineTo(CELL * 0.72, 5);
-  ctx.lineTo(CELL * 0.38, 6);
+  ctx.moveTo(10, -2);
+  ctx.lineTo(26, -4);
+  ctx.lineTo(26, 4);
+  ctx.lineTo(10, 5);
   ctx.closePath();
   ctx.fill();
 
   ctx.fillStyle = '#1a1a1a';
   ctx.beginPath();
-  ctx.arc(CELL * 0.22, -CELL * 0.16, 2.2, 0, Math.PI * 2);
+  ctx.arc(6, -6, 2.2, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
 }
 
-function angleForDir(d) {
-  return Math.atan2(d.y, d.x);
+function drawFeet() {
+  const base = stack[0];
+  const y = screenY(GROUND_Y);
+  ctx.fillStyle = '#ff8c1a';
+  for (const dx of [-30, 30]) {
+    const fx = base.x + base.w / 2 + dx;
+    ctx.beginPath();
+    ctx.moveTo(fx, y);
+    ctx.lineTo(fx - 8, y + 12);
+    ctx.lineTo(fx, y + 8);
+    ctx.lineTo(fx + 8, y + 12);
+    ctx.closePath();
+    ctx.fill();
+  }
 }
 
-function drawTrain() {
-  for (let i = train.length - 1; i > 0; i--) {
-    const s = train[i];
-    const prev = train[i - 1];
-    const a = angleForDir({ x: prev.x - s.x, y: prev.y - s.y });
-    drawDuckling(s.x * CELL + CELL / 2, s.y * CELL + CELL / 2, a);
-  }
-  const head = train[0];
-  drawHead(head.x * CELL + CELL / 2, head.y * CELL + CELL / 2, angleForDir(dir));
+function drawWater() {
+  const y = screenY(GROUND_Y) + BLOCK_H;
+  if (y > H) return;
+  const grad = ctx.createLinearGradient(0, y, 0, H);
+  grad.addColorStop(0, '#3fa9d6');
+  grad.addColorStop(1, '#1c5f8a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, y, W, H - y);
 }
 
 function draw() {
-  ctx.save();
-  if (shake > 0) {
-    ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
-    shake *= 0.85;
-    if (shake < 0.3) shake = 0;
+  drawSky();
+
+  for (let i = 0; i < stack.length; i++) {
+    drawBlock(stack[i], topWorldY(i), i === stack.length - 1 ? wobble * 0.4 : 0);
+  }
+  drawFeet();
+  drawWater();
+  drawDebris();
+
+  if (current) {
+    const worldY = topWorldY(stack.length);
+    drawBlock({ x: current.x, w: current.w, color: PALETTE[stack.length % PALETTE.length] }, worldY);
+    drawDuckHead(current.x + current.w / 2, screenY(worldY) - 16);
   }
 
-  drawWater();
-  drawLilyPads();
-  drawBread();
-  drawTrain();
-
-  ctx.restore();
+  if (perfectFlash > 0) {
+    ctx.save();
+    ctx.globalAlpha = perfectFlash / 14 * 0.5;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
 }
 
 function loop() {
