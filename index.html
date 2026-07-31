@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Duck Flap</title>
+  <title>Duck Pond</title>
   <style>
     :root {
       --bg: #060606;
@@ -143,11 +143,11 @@
 </head>
 <body>
 <div id="wrap">
-  <div id="title">DUCK FLAP</div>
+  <div id="title">DUCK POND</div>
 
   <div id="scorebar">
     <div class="score-side">
-      <div class="score-label">Score</div>
+      <div class="score-label">Ducklings</div>
       <div class="score-num" id="score">0</div>
     </div>
     <div class="score-divider"></div>
@@ -158,13 +158,14 @@
   </div>
 
   <div id="stage">
-    <canvas id="duck" width="480" height="620"></canvas>
+    <canvas id="duck" width="480" height="480"></canvas>
   </div>
 
-  <div id="msg">Press Space or Click to Start</div>
+  <div id="msg">Press Space or Arrow Key to Start</div>
 
   <div id="controls">
-    <span class="key">Space</span>&nbsp; / &nbsp;<span class="key">Click</span>&nbsp; Flap &nbsp;&nbsp;
+    <span class="key">↑</span><span class="key">↓</span><span class="key">←</span><span class="key">→</span>&nbsp; / &nbsp;<span class="key">WASD</span>&nbsp; Steer &nbsp;&nbsp;
+    <span class="key">Space</span>&nbsp; Restart
   </div>
 </div>
 
@@ -176,282 +177,269 @@ const bestEl = document.getElementById('best');
 const msgEl = document.getElementById('msg');
 
 const W = canvas.width, H = canvas.height;
-const WATER_Y = H - 90;
+const CELL = 24;
+const COLS = W / CELL, ROWS = H / CELL;
 
 const STATE = { WAIT: 0, PLAY: 1, OVER: 2 };
 let state = STATE.WAIT;
 
-let best = Number(localStorage.getItem('duckFlapBest') || 0);
+let best = Number(localStorage.getItem('duckPondBest') || 0);
 bestEl.textContent = best;
 
-const duck = {
-  x: 110,
-  y: H / 2,
-  vy: 0,
-  r: 17,
-  rot: 0,
-  wing: 0,
+const DIRS = {
+  up: { x: 0, y: -1 },
+  down: { x: 0, y: 1 },
+  left: { x: -1, y: 0 },
+  right: { x: 1, y: 0 },
 };
 
-const GRAVITY = 0.42;
-const FLAP_VY = -7.6;
-const MAX_FALL = 9;
-
-let pipes = [];
-const PIPE_W = 66;
-let pipeGap = 180;
-let pipeSpeed = 3.1;
-let frame = 0;
+let train = [];
+let dir = DIRS.right;
+let nextDir = DIRS.right;
+let bread = { x: 0, y: 0 };
 let score = 0;
+let frame = 0;
+let moveInterval = 9;
 let shake = 0;
+let waterFrame = 0;
 
-const clouds = [
-  { x: 60,  y: 70,  s: 1.0, spd: 0.25 },
-  { x: 240, y: 110, s: 0.7, spd: 0.18 },
-  { x: 380, y: 55,  s: 0.85, spd: 0.3 },
-  { x: 150, y: 160, s: 0.55, spd: 0.15 },
+const lilyPads = [
+  { x: 3, y: 3, r: 20, rot: 0.3 },
+  { x: 16, y: 5, r: 16, rot: 1.1 },
+  { x: 5, y: 15, r: 18, rot: 2.0 },
+  { x: 15, y: 16, r: 22, rot: 0.7 },
 ];
 
-let ripple = 0;
-
 function resetGame() {
-  duck.y = H / 2;
-  duck.vy = 0;
-  duck.rot = 0;
-  pipes = [];
-  pipeGap = 180;
-  pipeSpeed = 3.1;
-  frame = 0;
+  train = [
+    { x: 6, y: 10 },
+    { x: 5, y: 10 },
+    { x: 4, y: 10 },
+  ];
+  dir = DIRS.right;
+  nextDir = DIRS.right;
   score = 0;
+  frame = 0;
+  moveInterval = 9;
   scoreEl.textContent = 0;
-  spawnPipe();
+  placeBread();
 }
 
-function spawnPipe() {
-  const margin = 70;
-  const gapY = margin + Math.random() * (WATER_Y - margin * 2 - pipeGap);
-  pipes.push({ x: W + 10, gapY, passed: false });
+function placeBread() {
+  let cell;
+  do {
+    cell = { x: Math.floor(Math.random() * COLS), y: Math.floor(Math.random() * ROWS) };
+  } while (train.some(s => s.x === cell.x && s.y === cell.y));
+  bread = cell;
 }
 
-function flap() {
+function setDir(d) {
+  if (d.x === -dir.x && d.y === -dir.y) return;
+  nextDir = d;
+}
+
+function startOrRestart() {
   if (state === STATE.WAIT) {
     state = STATE.PLAY;
     msgEl.textContent = '';
-    duck.vy = FLAP_VY;
-  } else if (state === STATE.PLAY) {
-    duck.vy = FLAP_VY;
   } else if (state === STATE.OVER) {
     resetGame();
     state = STATE.WAIT;
-    msgEl.textContent = 'Press Space or Click to Start';
+    msgEl.textContent = 'Press Space or Arrow Key to Start';
   }
 }
 
 document.addEventListener('keydown', e => {
-  if (e.code === 'Space') { e.preventDefault(); flap(); }
+  const map = {
+    ArrowUp: 'up', KeyW: 'up',
+    ArrowDown: 'down', KeyS: 'down',
+    ArrowLeft: 'left', KeyA: 'left',
+    ArrowRight: 'right', KeyD: 'right',
+  };
+  if (e.code in map) {
+    e.preventDefault();
+    if (state === STATE.WAIT) { startOrRestart(); }
+    if (state === STATE.PLAY) setDir(DIRS[map[e.code]]);
+  } else if (e.code === 'Space') {
+    e.preventDefault();
+    startOrRestart();
+  }
 });
-canvas.addEventListener('mousedown', flap);
-canvas.addEventListener('touchstart', e => { e.preventDefault(); flap(); }, { passive: false });
 
 function gameOver() {
   state = STATE.OVER;
   shake = 10;
   if (score > best) {
     best = score;
-    localStorage.setItem('duckFlapBest', String(best));
+    localStorage.setItem('duckPondBest', String(best));
     bestEl.textContent = best;
   }
-  msgEl.textContent = `Game Over — Score ${score} — Press Space to Restart`;
+  msgEl.textContent = `Game Over — ${score} Ducklings — Press Space to Restart`;
 }
 
 function update() {
-  ripple += 0.06;
-
-  for (const c of clouds) {
-    c.x -= c.spd * (state === STATE.PLAY ? 1 : 0.4);
-    if (c.x < -60) c.x = W + 60;
-  }
-
-  if (state !== STATE.PLAY) {
-    duck.wing = Math.sin(frame * 0.15) * 0.4;
-    frame++;
-    return;
-  }
-
+  waterFrame += 0.02;
   frame++;
 
-  duck.vy = Math.min(MAX_FALL, duck.vy + GRAVITY);
-  duck.y += duck.vy;
-  duck.rot = Math.max(-0.5, Math.min(1.1, duck.vy / 10));
-  duck.wing = duck.vy < 0 ? Math.sin(frame * 0.6) * 0.9 : Math.sin(frame * 0.3) * 0.3;
+  if (state !== STATE.PLAY) return;
+  if (frame % moveInterval !== 0) return;
 
-  if (duck.y - duck.r < 0) { duck.y = duck.r; duck.vy = 0; }
+  dir = nextDir;
+  const head = train[0];
+  const nx = head.x + dir.x, ny = head.y + dir.y;
 
-  for (const p of pipes) {
-    p.x -= pipeSpeed;
-    if (!p.passed && p.x + PIPE_W < duck.x) {
-      p.passed = true;
-      score++;
-      scoreEl.textContent = score;
-      pipeSpeed = Math.min(6.5, 3.1 + score * 0.08);
-      pipeGap = Math.max(130, 180 - score * 2);
-    }
-  }
-  pipes = pipes.filter(p => p.x + PIPE_W > -10);
+  if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) { gameOver(); return; }
+  if (train.some(s => s.x === nx && s.y === ny)) { gameOver(); return; }
 
-  if (pipes.length === 0 || pipes[pipes.length - 1].x < W - 240) {
-    spawnPipe();
-  }
+  train.unshift({ x: nx, y: ny });
 
-  for (const p of pipes) {
-    const inX = duck.x + duck.r > p.x && duck.x - duck.r < p.x + PIPE_W;
-    if (inX) {
-      const inGap = duck.y - duck.r > p.gapY && duck.y + duck.r < p.gapY + pipeGap;
-      if (!inGap) { gameOver(); return; }
-    }
-  }
-
-  if (duck.y + duck.r > WATER_Y) {
-    duck.y = WATER_Y - duck.r;
-    gameOver();
-    return;
-  }
-}
-
-function drawCloud(c) {
-  ctx.save();
-  ctx.translate(c.x, c.y);
-  ctx.scale(c.s, c.s);
-  ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  ctx.beginPath();
-  ctx.ellipse(0, 0, 26, 14, 0, 0, Math.PI * 2);
-  ctx.ellipse(20, -6, 18, 12, 0, 0, Math.PI * 2);
-  ctx.ellipse(-20, -4, 16, 11, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawPipe(p) {
-  const topH = p.gapY;
-  const botY = p.gapY + pipeGap;
-  const botH = WATER_Y - botY;
-
-  const grad = ctx.createLinearGradient(p.x, 0, p.x + PIPE_W, 0);
-  grad.addColorStop(0, '#2f7d3a');
-  grad.addColorStop(0.5, '#3f9c4c');
-  grad.addColorStop(1, '#2a6d34');
-
-  // top reed
-  ctx.fillStyle = grad;
-  ctx.fillRect(p.x, 0, PIPE_W, topH);
-  ctx.fillStyle = '#26602f';
-  ctx.fillRect(p.x - 5, topH - 22, PIPE_W + 10, 22);
-
-  // bottom reed
-  ctx.fillStyle = grad;
-  ctx.fillRect(p.x, botY, PIPE_W, botH);
-  ctx.fillStyle = '#26602f';
-  ctx.fillRect(p.x - 5, botY, PIPE_W + 10, 22);
-
-  // texture lines
-  ctx.strokeStyle = 'rgba(0,0,0,0.15)';
-  ctx.lineWidth = 2;
-  for (let i = 1; i < 4; i++) {
-    const lx = p.x + (PIPE_W / 4) * i;
-    ctx.beginPath();
-    ctx.moveTo(lx, 0); ctx.lineTo(lx, topH);
-    ctx.moveTo(lx, botY); ctx.lineTo(lx, WATER_Y);
-    ctx.stroke();
+  if (nx === bread.x && ny === bread.y) {
+    score++;
+    scoreEl.textContent = score;
+    moveInterval = Math.max(4, 9 - Math.floor(score / 4));
+    placeBread();
+  } else {
+    train.pop();
   }
 }
 
 function drawWater() {
-  const grad = ctx.createLinearGradient(0, WATER_Y, 0, H);
-  grad.addColorStop(0, '#3fa9d6');
-  grad.addColorStop(1, '#1c5f8a');
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#2f8fc4');
+  grad.addColorStop(1, '#1b567f');
   ctx.fillStyle = grad;
-  ctx.fillRect(0, WATER_Y, W, H - WATER_Y);
+  ctx.fillRect(0, 0, W, H);
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  for (let x = 0; x <= W; x += 4) {
-    const y = WATER_Y + Math.sin(x * 0.05 + ripple * 20) * 3;
-    if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-
-  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-  for (let i = 0; i < 4; i++) {
-    const ly = WATER_Y + 20 + i * 16;
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= COLS; i++) {
     ctx.beginPath();
-    for (let x = -20; x <= W; x += 6) {
-      const y = ly + Math.sin(x * 0.03 + ripple * 10 + i) * 2;
-      if (x === -20) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    ctx.moveTo(i * CELL, 0);
+    ctx.lineTo(i * CELL, H);
+    ctx.stroke();
+  }
+  for (let j = 0; j <= ROWS; j++) {
+    ctx.beginPath();
+    ctx.moveTo(0, j * CELL);
+    ctx.lineTo(W, j * CELL);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 5; i++) {
+    const y = (i * 97 + waterFrame * 14) % (H + 40) - 20;
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 8) {
+      const yy = y + Math.sin(x * 0.04 + waterFrame * 2 + i) * 3;
+      if (x === 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
     }
     ctx.stroke();
   }
 }
 
-function drawDuck() {
-  ctx.save();
-  ctx.translate(duck.x, duck.y);
-  ctx.rotate(duck.rot * 0.5);
+function drawLilyPads() {
+  for (const p of lilyPads) {
+    const cx = p.x * CELL + CELL / 2, cy = p.y * CELL + CELL / 2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(p.rot);
+    ctx.fillStyle = 'rgba(60,150,80,0.55)';
+    ctx.beginPath();
+    ctx.arc(0, 0, p.r, 0.35, Math.PI * 2 - 0.35);
+    ctx.lineTo(0, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+}
 
-  // shadow
+function drawBread() {
+  const cx = bread.x * CELL + CELL / 2, cy = bread.y * CELL + CELL / 2;
+  const bob = Math.sin(waterFrame * 6) * 2;
   ctx.save();
-  ctx.globalAlpha = 0.25;
-  ctx.fillStyle = '#000';
+  ctx.shadowColor = 'rgba(255,220,150,0.8)';
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = '#d99a4e';
   ctx.beginPath();
-  ctx.ellipse(2, duck.r + 4, duck.r * 0.9, 5, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy + bob, 8, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#c17f36';
+  ctx.beginPath();
+  ctx.arc(cx - 3, cy + bob - 1, 1.4, 0, Math.PI * 2);
+  ctx.arc(cx + 3, cy + bob + 1, 1.4, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+}
 
-  // tail
-  ctx.fillStyle = '#f2b400';
-  ctx.beginPath();
-  ctx.ellipse(-duck.r - 2, 2, 8, 6, -0.3, 0, Math.PI * 2);
-  ctx.fill();
-
-  // body
-  ctx.fillStyle = '#ffd23f';
-  ctx.beginPath();
-  ctx.ellipse(0, 0, duck.r + 4, duck.r, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // wing
+function drawDuckling(cx, cy, angle) {
   ctx.save();
-  ctx.translate(-2, 2);
-  ctx.rotate(duck.wing);
-  ctx.fillStyle = '#f2b400';
-  ctx.beginPath();
-  ctx.ellipse(0, 0, 12, 8, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  // head
+  ctx.translate(cx, cy);
+  ctx.rotate(angle);
   ctx.fillStyle = '#ffd23f';
   ctx.beginPath();
-  ctx.arc(duck.r - 2, -duck.r + 2, 12, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, CELL * 0.42, CELL * 0.36, 0, 0, Math.PI * 2);
   ctx.fill();
-
-  // beak
   ctx.fillStyle = '#ff8c1a';
   ctx.beginPath();
-  ctx.moveTo(duck.r + 8, -duck.r + 2);
-  ctx.lineTo(duck.r + 24, -duck.r - 1);
-  ctx.lineTo(duck.r + 24, -duck.r + 6);
-  ctx.lineTo(duck.r + 8, -duck.r + 7);
+  ctx.moveTo(CELL * 0.32, -2);
+  ctx.lineTo(CELL * 0.55, 0);
+  ctx.lineTo(CELL * 0.32, 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath();
+  ctx.arc(CELL * 0.18, -CELL * 0.14, 1.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawHead(cx, cy, angle) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(angle);
+
+  ctx.fillStyle = '#f2b400';
+  ctx.beginPath();
+  ctx.ellipse(-CELL * 0.15, CELL * 0.28, 6, 4, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#ffd23f';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, CELL * 0.5, CELL * 0.44, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#ff8c1a';
+  ctx.beginPath();
+  ctx.moveTo(CELL * 0.38, -3);
+  ctx.lineTo(CELL * 0.72, -1);
+  ctx.lineTo(CELL * 0.72, 5);
+  ctx.lineTo(CELL * 0.38, 6);
   ctx.closePath();
   ctx.fill();
 
-  // eye
   ctx.fillStyle = '#1a1a1a';
   ctx.beginPath();
-  ctx.arc(duck.r + 2, -duck.r - 1, 2.4, 0, Math.PI * 2);
+  ctx.arc(CELL * 0.22, -CELL * 0.16, 2.2, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
+}
+
+function angleForDir(d) {
+  return Math.atan2(d.y, d.x);
+}
+
+function drawTrain() {
+  for (let i = train.length - 1; i > 0; i--) {
+    const s = train[i];
+    const prev = train[i - 1];
+    const a = angleForDir({ x: prev.x - s.x, y: prev.y - s.y });
+    drawDuckling(s.x * CELL + CELL / 2, s.y * CELL + CELL / 2, a);
+  }
+  const head = train[0];
+  drawHead(head.x * CELL + CELL / 2, head.y * CELL + CELL / 2, angleForDir(dir));
 }
 
 function draw() {
@@ -462,28 +450,10 @@ function draw() {
     if (shake < 0.3) shake = 0;
   }
 
-  // sky
-  const sky = ctx.createLinearGradient(0, 0, 0, WATER_Y);
-  sky.addColorStop(0, '#7fd4ff');
-  sky.addColorStop(1, '#cdeeff');
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, W, WATER_Y);
-
-  // sun
-  ctx.save();
-  ctx.shadowColor = 'rgba(255,230,150,0.9)';
-  ctx.shadowBlur = 40;
-  ctx.fillStyle = '#fff2b0';
-  ctx.beginPath();
-  ctx.arc(W - 70, 65, 30, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  clouds.forEach(drawCloud);
-
-  pipes.forEach(drawPipe);
   drawWater();
-  drawDuck();
+  drawLilyPads();
+  drawBread();
+  drawTrain();
 
   ctx.restore();
 }
