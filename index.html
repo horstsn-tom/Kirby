@@ -326,38 +326,89 @@ function playDistant(){
   playNoise(1.4, 0.18, 500);
 }
 
+function makeDistortionCurve(amount){
+  const n = 512, curve = new Float32Array(n), deg = Math.PI / 180;
+  for (let i = 0; i < n; i++){
+    const x = (i * 2) / n - 1;
+    curve[i] = ((3 + amount) * x * 20 * deg) / (Math.PI + amount * Math.abs(x));
+  }
+  return curve;
+}
+
+function silenceBeat(){
+  if (!actx) return;
+  const t = actx.currentTime;
+  droneNodes.forEach(n => {
+    n.g.gain.cancelScheduledValues(t);
+    n.g.gain.setValueAtTime(n.g.gain.value, t);
+    n.g.gain.linearRampToValueAtTime(0.0001, t + 0.07);
+  });
+}
+
+function playImpact(){
+  if (!actx) return;
+  const t = actx.currentTime;
+
+  const osc = actx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(150, t);
+  osc.frequency.exponentialRampToValueAtTime(36, t + 0.1);
+  const g = actx.createGain();
+  g.gain.setValueAtTime(0.95, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+  osc.connect(g); g.connect(masterGain);
+  osc.start(t); osc.stop(t + 0.42);
+
+  const click = actx.createBufferSource();
+  click.buffer = noiseBuffer;
+  const hp = actx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 2200;
+  const cg = actx.createGain();
+  cg.gain.setValueAtTime(0.55, t);
+  cg.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+  click.connect(hp); hp.connect(cg); cg.connect(masterGain);
+  click.start(t); click.stop(t + 0.06);
+}
+
 function playScream(){
   if (!actx) return;
   const t = actx.currentTime;
+  const dist = actx.createWaveShaper();
+  dist.curve = makeDistortionCurve(55);
+  dist.oversample = '4x';
 
   // shrieking noise sweep
   const src = actx.createBufferSource();
   src.buffer = noiseBuffer;
   const bp = actx.createBiquadFilter();
   bp.type = 'bandpass';
-  bp.Q.value = 7;
+  bp.Q.value = 8;
   bp.frequency.setValueAtTime(500, t);
-  bp.frequency.exponentialRampToValueAtTime(3400, t + 0.1);
-  bp.frequency.exponentialRampToValueAtTime(650, t + 0.55);
+  bp.frequency.exponentialRampToValueAtTime(3800, t + 0.09);
+  bp.frequency.exponentialRampToValueAtTime(650, t + 0.6);
   const ng = actx.createGain();
   ng.gain.setValueAtTime(0.0001, t);
-  ng.gain.exponentialRampToValueAtTime(0.85, t + 0.04);
-  ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+  ng.gain.exponentialRampToValueAtTime(0.95, t + 0.03);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.65);
   src.connect(bp); bp.connect(ng); ng.connect(masterGain);
-  src.start(t); src.stop(t + 0.65);
+  src.start(t); src.stop(t + 0.7);
 
-  // piercing pitch-diving shriek
-  const osc = actx.createOscillator();
-  osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(1400, t);
-  osc.frequency.exponentialRampToValueAtTime(2800, t + 0.09);
-  osc.frequency.exponentialRampToValueAtTime(160, t + 0.55);
-  const og = actx.createGain();
-  og.gain.setValueAtTime(0.0001, t);
-  og.gain.exponentialRampToValueAtTime(0.55, t + 0.03);
-  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
-  osc.connect(og); og.connect(masterGain);
-  osc.start(t); osc.stop(t + 0.65);
+  // two detuned, distorted shrieks beating against each other
+  [0, 22].forEach(detune => {
+    const osc = actx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(1500, t);
+    osc.detune.value = detune;
+    osc.frequency.exponentialRampToValueAtTime(3000, t + 0.08);
+    osc.frequency.exponentialRampToValueAtTime(150, t + 0.6);
+    const og = actx.createGain();
+    og.gain.setValueAtTime(0.0001, t);
+    og.gain.exponentialRampToValueAtTime(0.42, t + 0.025);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.65);
+    osc.connect(dist); dist.connect(og); og.connect(masterGain);
+    osc.start(t); osc.stop(t + 0.7);
+  });
 }
 
 /* ============================= MAZE GEN ============================= */
@@ -770,9 +821,9 @@ function jumpScareFlash(cb){
   flash.style.transition = 'none';
   flash.style.opacity = '1';
   setTimeout(()=>{
-    flash.style.transition = 'opacity 0.9s ease';
+    flash.style.transition = 'opacity 0.35s ease';
     flash.style.opacity = '0';
-  }, 60);
+  }, 40);
   cb && cb();
 }
 
@@ -909,11 +960,14 @@ function isPointLit(x,y){
 }
 
 /* ============================= JUMP SCARE ============================= */
-function drawScareFace(ctx, w, h){
+function drawScareFace(ctx, w, h, t){
   const cx = w/2, cy = h/2;
+  const jawOpen = 40 + t*110;
+  const glow = 14 + t*36;
+  const twitch = 2 + t*5;
 
   const headGrad = ctx.createRadialGradient(cx, cy-20, 40, cx, cy, 340);
-  headGrad.addColorStop(0, '#3a0a0a');
+  headGrad.addColorStop(0, `rgba(${58+t*40},${10+t*4},10,1)`);
   headGrad.addColorStop(0.6, '#170404');
   headGrad.addColorStop(1, '#000000');
   ctx.fillStyle = headGrad;
@@ -929,7 +983,10 @@ function drawScareFace(ctx, w, h){
   ctx.beginPath(); ctx.ellipse(cx, cy-95, 180, 40, 0, 0, Math.PI*2); ctx.fill();
 
   [-1,1].forEach(side => {
-    const ex = cx + side*95, ey = cy-40;
+    const ex = cx + side*95 + (Math.random()-0.5)*twitch, ey = cy-40 + (Math.random()-0.5)*twitch;
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,20,20,0.9)';
+    ctx.shadowBlur = glow;
     const eyeGrad = ctx.createRadialGradient(ex, ey, 4, ex, ey, 60);
     eyeGrad.addColorStop(0, '#fff4e8');
     eyeGrad.addColorStop(0.6, '#e8d2c8');
@@ -938,8 +995,9 @@ function drawScareFace(ctx, w, h){
     ctx.beginPath();
     ctx.ellipse(ex, ey, 58, 38, 0, 0, Math.PI*2);
     ctx.fill();
+    ctx.restore();
 
-    ctx.strokeStyle = 'rgba(200,20,20,0.55)';
+    ctx.strokeStyle = 'rgba(200,20,20,0.6)';
     ctx.lineWidth = 1;
     for (let i = 0; i < 6; i++){
       const a = (i/6) * Math.PI * 2;
@@ -951,64 +1009,78 @@ function drawScareFace(ctx, w, h){
 
     ctx.fillStyle = '#050000';
     ctx.beginPath();
-    ctx.ellipse(ex, ey, 8, 30, 0, 0, Math.PI*2);
+    ctx.ellipse(ex, ey, 7, 30 - t*10, 0, 0, Math.PI*2);
     ctx.fill();
   });
 
-  const mouthY = cy+140;
-  ctx.fillStyle = '#050000';
+  const mouthY = cy+130;
+  ctx.fillStyle = '#0c0000';
   ctx.beginPath();
   ctx.moveTo(cx-150, mouthY-10);
-  ctx.quadraticCurveTo(cx, mouthY+70, cx+150, mouthY-10);
+  ctx.quadraticCurveTo(cx, mouthY+jawOpen, cx+150, mouthY-10);
   ctx.quadraticCurveTo(cx, mouthY+30, cx-150, mouthY-10);
   ctx.fill();
 
   ctx.fillStyle = '#d8cfc0';
   const teethCount = 10;
   for (let i = 0; i < teethCount; i++){
-    const xx = cx-140 + (i/(teethCount-1))*280;
-    const th = 16 + Math.random()*10;
+    const xx = cx-150 + (i/(teethCount-1))*300;
+    const th = 18 + Math.random()*12;
     ctx.beginPath();
     ctx.moveTo(xx-9, mouthY-6);
     ctx.lineTo(xx+9, mouthY-6);
     ctx.lineTo(xx, mouthY-6+th);
     ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(xx-8, mouthY+jawOpen*0.7);
+    ctx.lineTo(xx+8, mouthY+jawOpen*0.7);
+    ctx.lineTo(xx, mouthY+jawOpen*0.7-th*0.7);
+    ctx.fill();
   }
 }
 
 function runJumpScare(onComplete){
-  const total = 650;
+  const total = 950;
+  const strobeStart = 0.72;
   const start = performance.now();
 
   function frame(now){
     const t = Math.min(1, (now-start)/total);
     scareCtx.clearRect(0, 0, W, H);
 
-    const nearEnd = t > 0.82;
-    const flickerOff = nearEnd && Math.sin(t*90) <= 0;
+    const strobing = t > strobeStart;
+    const strobeProgress = strobing ? (t-strobeStart)/(1-strobeStart) : 0;
+    const flickerOff = strobing && Math.sin(t * (60 + strobeProgress*140)) <= 0;
+
     if (flickerOff){
-      scareCtx.fillStyle = '#000';
+      scareCtx.fillStyle = strobeProgress > 0.5 && Math.random() < 0.3 ? '#1a0000' : '#000';
       scareCtx.fillRect(0, 0, W, H);
     } else {
-      const shakeEnvelope = Math.max(0, 1 - Math.abs(t-0.35)*1.4);
-      const shakeMag = 14 * shakeEnvelope;
+      // snap: appear instantly large rather than easing in
+      const snapping = t < 0.06;
+      const scale = snapping ? 1.3 : 1.3 + (t-0.06)*0.32;
+      const shakeMag = snapping ? 26 : Math.max(3, 11 - t*9);
       const jitterX = (Math.random()-0.5) * shakeMag;
       const jitterY = (Math.random()-0.5) * shakeMag;
-      const scale = 0.82 + t*0.45;
 
       scareCtx.save();
       scareCtx.translate(W/2 + jitterX, H/2 + jitterY);
       scareCtx.scale(scale, scale);
       scareCtx.translate(-W/2, -H/2);
       scareCtx.fillStyle = '#020202';
-      scareCtx.fillRect(-60, -60, W+120, H+120);
-      drawScareFace(scareCtx, W, H);
+      scareCtx.fillRect(-80, -80, W+160, H+160);
+      drawScareFace(scareCtx, W, H, t);
       scareCtx.restore();
+
+      if (strobing){
+        scareCtx.fillStyle = `rgba(140,0,0,${(strobeProgress*0.3).toFixed(2)})`;
+        scareCtx.fillRect(0, 0, W, H);
+      }
     }
 
-    const glitchHue = Math.sin(t*40) * 10;
-    const invert = Math.random() < 0.05 ? ' invert(1)' : '';
-    scareCanvas.style.filter = `contrast(1.15) saturate(1.3) hue-rotate(${glitchHue.toFixed(1)}deg)${invert}`;
+    const glitchHue = Math.sin(t*40) * 12;
+    const invert = Math.random() < (strobing ? 0.18 : 0.05) ? ' invert(1)' : '';
+    scareCanvas.style.filter = `contrast(1.2) saturate(1.4) hue-rotate(${glitchHue.toFixed(1)}deg)${invert}`;
 
     if (t < 1){
       requestAnimationFrame(frame);
@@ -1050,16 +1122,22 @@ function loop(ts){
 
 function onLose(){
   state = 'lose';
-  playScream();
-  playStinger();
-  jumpScareFlash();
   stage.classList.remove('shake');
   stage.style.setProperty('--fear','0');
   const elapsed = ((performance.now()-startTime)/1000).toFixed(0);
   document.getElementById('loseStat').textContent = `Survived ${elapsed}s · ${foundNotes}/${notes.length} notes found`;
-  runJumpScare(() => {
-    document.getElementById('lose').classList.remove('hidden');
-  });
+
+  // a beat of near-silence before the hit lands, for a harder startle
+  silenceBeat();
+  setTimeout(() => {
+    playImpact();
+    playScream();
+    playStinger();
+    jumpScareFlash();
+    runJumpScare(() => {
+      document.getElementById('lose').classList.remove('hidden');
+    });
+  }, 90);
 }
 
 function onWin(){
@@ -1078,6 +1156,9 @@ function beginGame(){
   state = 'playing';
   scareCtx.clearRect(0, 0, W, H);
   scareCanvas.style.filter = 'none';
+  if (actx){
+    droneNodes.forEach(n => n.g.gain.cancelScheduledValues(actx.currentTime));
+  }
   document.getElementById('start').classList.add('hidden');
   document.getElementById('lose').classList.add('hidden');
   document.getElementById('win').classList.add('hidden');
