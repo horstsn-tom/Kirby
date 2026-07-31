@@ -218,6 +218,7 @@
     <span class="key">SPACE</span> jump &nbsp;|&nbsp;
     <span class="key">E</span> drop clone, jump again near it for a <b>double jump</b> &nbsp;|&nbsp;
     <span class="key">SHIFT</span> dash &nbsp;|&nbsp;
+    <span class="key">F</span> shoot &nbsp;|&nbsp;
     jump toward a wall to <b>wall-jump</b> off it &nbsp;|&nbsp;
     <span class="key">P</span> pause &nbsp;|&nbsp;
     <span class="key">R</span> restart &nbsp;|&nbsp;
@@ -257,6 +258,11 @@ const WALL_SLIDE_MAX_FALL = 3.5;
 const DASH_SPEED = 11;
 const DASH_FRAMES = 12;
 const DASH_COOLDOWN_FRAMES = 42;
+
+const PROJECTILE_SPEED = 14;
+const PROJECTILE_LIFETIME_FRAMES = 60;
+const SHOOT_COOLDOWN_FRAMES = 14;
+const ENEMY_W = 26, ENEMY_H = 34;
 
 // =======================================================================
 // Save data & upgrades
@@ -347,6 +353,8 @@ const Sound = (() => {
     cloneJump: () => { ensure(); tone({ freq: 500, glideTo: 900, dur: 0.18, type: 'square', gain: 0.18 }); },
     wallJump: () => { ensure(); tone({ freq: 460, glideTo: 760, dur: 0.14, type: 'sawtooth', gain: 0.16 }); },
     dash: () => { ensure(); tone({ freq: 900, glideTo: 300, dur: 0.13, type: 'sawtooth', gain: 0.15 }); },
+    shoot: () => { ensure(); tone({ freq: 1200, glideTo: 1800, dur: 0.06, type: 'square', gain: 0.1 }); },
+    enemyDefeat: () => { ensure(); tone({ freq: 340, glideTo: 120, dur: 0.16, type: 'square', gain: 0.16 }); tone({ freq: 900, dur: 0.05, type: 'square', gain: 0.08, delay: 0.02 }); },
     death: () => { ensure(); tone({ freq: 300, glideTo: 60, dur: 0.35, type: 'sawtooth', gain: 0.2 }); },
     batteryPickup: () => { ensure(); tone({ freq: 700, dur: 0.08, type: 'sine', gain: 0.15 }); tone({ freq: 1000, dur: 0.1, type: 'sine', gain: 0.12, delay: 0.06 }); },
     checkpoint: () => { ensure(); tone({ freq: 500, dur: 0.1, type: 'triangle', gain: 0.12 }); tone({ freq: 750, dur: 0.15, type: 'triangle', gain: 0.1, delay: 0.08 }); },
@@ -392,6 +400,136 @@ function buildSkyline(levelWidth, seed) {
   return buildings;
 }
 
+function pick(rng, arr) { return arr[Math.floor(rng() * arr.length)]; }
+
+// Procedurally builds levels 5-14. Gap sizes/height deltas reuse the exact
+// thresholds validated by hand for levels 1-4: a single jump safely covers
+// <=150px flat (or up to 230px with 100px+ of drop-assist), and a gap needs
+// 250px+ to require a clone double jump — anything between is a dead zone
+// that's neither reliably single-jumpable nor a real double-jump gate.
+const GROUND_MIN_Y = 260, GROUND_MAX_Y = 460;
+const LEVEL_NAMES = ['Scrapyard', 'Overpass', 'Substation', 'Foundry', 'Junction', 'Reactor Core', 'Data Center', 'Skybridge', 'Terminal', 'Core Access'];
+
+function generateLevel(levelNumber) {
+  const rng = seededRandom(hashString('robotParkourLevel' + levelNumber));
+  const difficulty = (levelNumber - 5) / 9; // 0 at level5, 1 at level14
+
+  const platforms = [];
+  const spikes = [];
+  const enemies = [];
+  const checkpoints = [];
+  const batteryCandidates = [];
+
+  let x = 0, y = 460;
+  const numSegments = 8 + Math.floor(difficulty * 5); // 8..13 platforms
+  const doubleChance = 0.22 + difficulty * 0.2;
+  const bigDropChance = 0.12;
+  const spikeChance = 0.15 + difficulty * 0.25;
+  const enemyChance = 0.25 + difficulty * 0.35;
+
+  // Pass 1: decide every segment's gap/height plan up front, so pass 2 can
+  // look one segment ahead — a platform immediately before a double/bigdrop
+  // gap must stay clear of enemies, since it's the only place to stage a
+  // clone before that jump; an enemy squatting there is an unavoidable
+  // bottleneck rather than an avoidable hazard.
+  const plan = [];
+  for (let i = 0; i < numSegments; i++) {
+    const w = 130 + Math.floor(rng() * 170);
+    let gapType, gapSize, heightDelta;
+    if (i === 0) {
+      gapType = 'start'; gapSize = 0; heightDelta = 0;
+    } else {
+      // heightDelta is added directly to y (canvas coords: larger y = lower/down),
+      // so a positive heightDelta is a DROP and a negative one is a RISE.
+      const canBigDrop = y <= GROUND_MAX_Y - 150;
+      const r = rng();
+      if (r < doubleChance) {
+        gapType = 'double';
+        gapSize = 260 + Math.floor(rng() * 70);
+        heightDelta = pick(rng, [-30, 0, 0, 20, 50]);
+      } else if (r < doubleChance + bigDropChance && canBigDrop) {
+        gapType = 'bigdrop';
+        gapSize = 180 + Math.floor(rng() * 50);
+        heightDelta = 140 + Math.floor(rng() * Math.min(40, GROUND_MAX_Y - y - 140));
+      } else {
+        gapType = 'single';
+        gapSize = 80 + Math.floor(rng() * 70);
+        heightDelta = pick(rng, [-80, -40, 0, 0, 40, 70]);
+      }
+      y = Math.max(GROUND_MIN_Y, Math.min(GROUND_MAX_Y, y + heightDelta));
+    }
+    plan.push({ w, gapType, gapSize, y });
+  }
+
+  // Pass 2: place platforms and hazards using the precomputed plan.
+  for (let i = 0; i < numSegments; i++) {
+    const { w, gapType, gapSize } = plan[i];
+
+    if (gapType !== 'start') {
+      const prevRight = platforms[platforms.length - 1].x + platforms[platforms.length - 1].w;
+      x = prevRight + gapSize;
+    }
+    const platform = { x, y: plan[i].y, w, h: plan[i].y >= 440 ? 80 : 20 };
+    platforms.push(platform);
+
+    if (gapType !== 'start' && rng() < spikeChance && gapSize >= 100) {
+      const prev = platforms[platforms.length - 2];
+      const gapStart = prev.x + prev.w, gapEnd = platform.x;
+      const spikeW = Math.min(gapSize - 40, 60 + Math.floor(rng() * 100));
+      const margin = (gapEnd - gapStart - spikeW) / 2;
+      const pitY = Math.max(prev.y, platform.y) + 20;
+      spikes.push({ x: Math.round(gapStart + margin), y: pitY, w: Math.round(spikeW), h: 20 });
+    }
+
+    // leftMargin keeps the enemy's patrol zone well clear of the platform's
+    // leading edge, where a player arriving via a gap-jump actually lands —
+    // a tight margin let enemies spawn right on top of incoming landings.
+    // Landings right after a double-jump carry more momentum/less precision
+    // than a single jump, so they get an even bigger buffer. A platform
+    // immediately before a double/bigdrop gap is skipped entirely (see pass 1
+    // comment above).
+    let enemyOnThisPlatform = false;
+    const nextGapType = i + 1 < numSegments ? plan[i + 1].gapType : null;
+    const nextIsBigGap = nextGapType === 'double' || nextGapType === 'bigdrop';
+    const enemyLeftMargin = (gapType === 'double' || gapType === 'bigdrop') ? 90 : 45;
+    const enemyRightMargin = 25;
+    if (gapType !== 'start' && !nextIsBigGap && w >= enemyLeftMargin + enemyRightMargin + ENEMY_W + 70 && rng() < enemyChance) {
+      const patrolW = w - enemyLeftMargin - enemyRightMargin - ENEMY_W;
+      if (patrolW > 20) {
+        enemies.push({
+          x: x + enemyLeftMargin, y: platform.y - ENEMY_H, w: ENEMY_W, h: ENEMY_H,
+          minX: x + enemyLeftMargin, maxX: x + enemyLeftMargin + patrolW,
+          speed: 1.2 + rng() * 1.0, dir: 1, alive: true,
+        });
+        enemyOnThisPlatform = true;
+      }
+    }
+
+    // Never place a checkpoint on a platform that also got an enemy — respawning
+    // could otherwise land the player directly in its patrol path, an
+    // instant and permanent death loop.
+    if (gapType !== 'start' && !enemyOnThisPlatform && i % 3 === 0 && i < numSegments - 1) {
+      checkpoints.push({ x: x + w / 2 - 10, y: platform.y - 60, w: 20, h: 60, spawnX: x + w / 2 - 10, spawnY: platform.y - 40 });
+    }
+
+    if (gapType !== 'start') batteryCandidates.push({ x: x + w / 2, y: platform.y - 30 });
+  }
+
+  const last = platforms[platforms.length - 1];
+  const goal = { x: last.x + last.w / 2 - 20, y: last.y - 80, w: 40, h: 80 };
+
+  const batteries = [];
+  const step = Math.max(1, Math.floor(batteryCandidates.length / 5));
+  for (let i = 0; i < batteryCandidates.length && batteries.length < 5; i += step) batteries.push(batteryCandidates[i]);
+
+  return {
+    id: 'level' + levelNumber,
+    name: `Level ${levelNumber} — ${LEVEL_NAMES[levelNumber - 5]}`,
+    width: last.x + last.w + 120, startX: 40, startY: 400,
+    platforms, spikes, enemies, goal, checkpoints, batteries,
+  };
+}
+
 const LEVELS = [
   {
     id: 'level1', name: 'Level 1 — Rooftop Run',
@@ -415,6 +553,7 @@ const LEVELS = [
       { x: 3330, y: 440, w: 220, h: 20 },
     ],
     goal: { x: 3900, y: 380, w: 40, h: 80 },
+    enemies: [],
     checkpoints: [
       { x: 1420, y: 350, w: 20, h: 60, spawnX: 1420, spawnY: 370 },
       { x: 2770, y: 320, w: 20, h: 60, spawnX: 2770, spawnY: 340 },
@@ -445,6 +584,7 @@ const LEVELS = [
       { x: 2860, y: 440, w: 180, h: 20 },
     ],
     goal: { x: 3380, y: 380, w: 40, h: 80 },
+    enemies: [],
     checkpoints: [
       { x: 1500, y: 340, w: 20, h: 60, spawnX: 1500, spawnY: 360 },
       { x: 2720, y: 400, w: 20, h: 60, spawnX: 2720, spawnY: 420 },
@@ -473,6 +613,7 @@ const LEVELS = [
       { x: 1850, y: 440, w: 130, h: 20 },
     ],
     goal: { x: 2280, y: 320, w: 40, h: 80 },
+    enemies: [],
     checkpoints: [
       { x: 950,  y: 60,  w: 20, h: 60, spawnX: 950,  spawnY: 80 },
       { x: 1690, y: 340, w: 20, h: 60, spawnX: 1690, spawnY: 360 },
@@ -502,6 +643,7 @@ const LEVELS = [
       { x: 2520, y: 440, w: 70, h: 20 },
     ],
     goal: { x: 2820, y: 380, w: 40, h: 80 },
+    enemies: [],
     checkpoints: [
       { x: 1300, y: 400, w: 20, h: 60, spawnX: 1300, spawnY: 420 },
       { x: 1950, y: 340, w: 20, h: 60, spawnX: 1950, spawnY: 360 },
@@ -512,6 +654,8 @@ const LEVELS = [
     ],
   },
 ];
+
+for (let n = 5; n <= 14; n++) LEVELS.push(generateLevel(n));
 
 for (const level of LEVELS) {
   level._skyFar = buildSkyline(level.width, hashString(level.id + 'far'));
@@ -536,9 +680,12 @@ const player = {
   x: 0, y: 0, w: PLAYER_W, h: PLAYER_H, vx: 0, vy: 0, grounded: false, facing: 1, runCycle: 0, squashX: 1, squashY: 1,
   touchingWallSide: 0, wallCoyote: 0, wallJumpLockFrames: 0, wallJumpVx: 0,
   dashing: false, dashFramesLeft: 0, dashCooldownFrames: 0, dashDir: 1,
+  shootCooldownFrames: 0,
 };
 let clones = []; // { x, y, w, h }
 let particles = [];
+let projectiles = []; // { x, y, vx, life }
+let runEnemiesDefeated = 0;
 
 function showToast(text, ms = 1300) {
   messageEl.textContent = text;
@@ -560,6 +707,7 @@ function loadLevel(index) {
   level = LEVELS[index];
   for (const cp of level.checkpoints) cp.active = false;
   for (const b of level.batteries) b.collected = false;
+  for (const e of level.enemies) { e.alive = true; e.dir = 1; }
 }
 
 function resetRunState() {
@@ -568,14 +716,18 @@ function resetRunState() {
   player.runCycle = 0; player.squashX = 1; player.squashY = 1;
   player.touchingWallSide = 0; player.wallCoyote = 0; player.wallJumpLockFrames = 0; player.wallJumpVx = 0;
   player.dashing = false; player.dashFramesLeft = 0; player.dashCooldownFrames = 0;
+  player.shootCooldownFrames = 0;
   respawnPoint = { x: level.startX, y: level.startY };
   clones = [];
   particles = [];
+  projectiles = [];
   deaths = 0;
   runElapsedMs = 0;
   runBatteriesCollected = 0;
+  runEnemiesDefeated = 0;
   for (const cp of level.checkpoints) cp.active = false;
   for (const b of level.batteries) b.collected = false;
+  for (const e of level.enemies) { e.alive = true; e.dir = 1; }
 }
 
 function respawnPlayer() {
@@ -584,6 +736,7 @@ function respawnPlayer() {
   player.touchingWallSide = 0; player.wallCoyote = 0; player.wallJumpLockFrames = 0;
   player.dashing = false; player.dashFramesLeft = 0;
   clones = [];
+  projectiles = [];
 }
 
 function die() {
@@ -646,7 +799,7 @@ function completeLevel() {
   persist();
   Sound.win();
   gameState = 'levelComplete';
-  renderComplete({ time: timeSec, deaths, batteries: runBatteriesCollected, isNewBest });
+  renderComplete({ time: timeSec, deaths, batteries: runBatteriesCollected, enemies: runEnemiesDefeated, totalEnemies: level.enemies.length, isNewBest });
   showPanel(panelComplete);
 }
 
@@ -708,7 +861,7 @@ function renderPause() {
   `;
 }
 
-function renderComplete({ time, deaths, batteries, isNewBest }) {
+function renderComplete({ time, deaths, batteries, enemies, totalEnemies, isNewBest }) {
   const hasNext = currentLevelIndex + 1 < LEVELS.length;
   panelComplete.innerHTML = `
     <h2>${isNewBest ? '🏆 New Best!' : 'Level Complete'}</h2>
@@ -716,6 +869,7 @@ function renderComplete({ time, deaths, batteries, isNewBest }) {
       <div>Time<b>${time.toFixed(1)}s</b></div>
       <div>Deaths<b>${deaths}</b></div>
       <div>Batteries<b>+${batteries} 🔋</b></div>
+      ${totalEnemies > 0 ? `<div>Defeated<b>${enemies}/${totalEnemies}</b></div>` : ''}
     </div>
     <div class="complete-actions">
       ${hasNext ? '<button class="btn" data-action="next-level">Next Level →</button>' : ''}
@@ -760,6 +914,10 @@ document.addEventListener('keydown', e => {
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
     e.preventDefault();
     if (gameState === 'playing') tryDash();
+  }
+  if (e.code === 'KeyF') {
+    e.preventDefault();
+    if (gameState === 'playing') tryShoot();
   }
   if (e.code === 'KeyR') {
     e.preventDefault();
@@ -839,6 +997,16 @@ function tryDash() {
   player.dashCooldownFrames = DASH_COOLDOWN_FRAMES;
   Sound.dash();
   spawnParticles(player.x + player.w / 2, player.y + player.h / 2, '#7fd7ff', 10);
+}
+
+function tryShoot() {
+  if (player.shootCooldownFrames > 0) return;
+  player.shootCooldownFrames = SHOOT_COOLDOWN_FRAMES;
+  const muzzleX = player.x + (player.facing >= 0 ? player.w : 0);
+  const muzzleY = player.y + player.h * 0.4;
+  projectiles.push({ x: muzzleX, y: muzzleY, vx: player.facing * PROJECTILE_SPEED, life: PROJECTILE_LIFETIME_FRAMES });
+  Sound.shoot();
+  spawnParticles(muzzleX, muzzleY, '#7fd7ff', 4);
 }
 
 // =======================================================================
@@ -974,6 +1142,33 @@ function update() {
     completeLevel();
   }
 
+  if (player.shootCooldownFrames > 0) player.shootCooldownFrames--;
+
+  for (const e of level.enemies) {
+    if (!e.alive) continue;
+    e.x += e.speed * e.dir;
+    if (e.x <= e.minX) { e.x = e.minX; e.dir = 1; }
+    else if (e.x + e.w >= e.maxX) { e.x = e.maxX - e.w; e.dir = -1; }
+    if (rectsOverlap(player, e)) die();
+  }
+
+  for (const p of projectiles) {
+    p.x += p.vx;
+    p.life--;
+    for (const e of level.enemies) {
+      if (!e.alive) continue;
+      if (rectsOverlap({ x: p.x - 3, y: p.y - 2, w: 6, h: 4 }, e)) {
+        e.alive = false;
+        p.life = 0;
+        runEnemiesDefeated++;
+        Sound.enemyDefeat();
+        spawnParticles(e.x + e.w / 2, e.y + e.h / 2, '#ff5a5a', 16);
+        break;
+      }
+    }
+  }
+  projectiles = projectiles.filter(p => p.life > 0 && p.x > cameraX - 50 && p.x < cameraX + W + 50);
+
   for (const pt of particles) { pt.x += pt.vx; pt.y += pt.vy; pt.vy += 0.15; pt.life--; }
   particles = particles.filter(pt => pt.life > 0);
 
@@ -1083,6 +1278,53 @@ function drawCheckpoint(cp) {
   }
 }
 
+function drawEnemy(e, t) {
+  const sx = e.x - cameraX, sy = e.y;
+  const w = e.w, h = e.h;
+  const glow = ctx.createRadialGradient(sx + w / 2, sy + h / 2, 0, sx + w / 2, sy + h / 2, 22);
+  glow.addColorStop(0, 'rgba(255,90,90,0.2)');
+  glow.addColorStop(1, 'rgba(255,90,90,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(sx - 14, sy - 14, w + 28, h + 28);
+
+  const tread = Math.sin(t * 0.2) * 2;
+  ctx.fillStyle = '#3a1a1a';
+  ctx.fillRect(sx, sy + h - 6, w, 6);
+
+  ctx.fillStyle = '#7a2a2a';
+  ctx.beginPath();
+  ctx.roundRect(sx, sy + 4, w, h - 10, 4);
+  ctx.fill();
+
+  ctx.fillStyle = '#ff5a5a';
+  const eyeW = w * 0.5;
+  ctx.beginPath();
+  ctx.roundRect(sx + w / 2 - eyeW / 2, sy + h * 0.35 + tread * 0.3, eyeW, 6, 2);
+  ctx.fill();
+  ctx.shadowColor = '#ff5a5a';
+  ctx.shadowBlur = 8;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.strokeStyle = '#ff8a8a';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(sx + 1, sy + 4, w - 2, h - 10);
+}
+
+function drawProjectile(p) {
+  const sx = p.x - cameraX;
+  ctx.strokeStyle = '#7fd7ff';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(sx - Math.sign(p.vx) * 10, p.y);
+  ctx.lineTo(sx, p.y);
+  ctx.stroke();
+  ctx.fillStyle = '#e8faff';
+  ctx.beginPath();
+  ctx.arc(sx, p.y, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 let frameCount = 0;
 function draw() {
   ctx.clearRect(0, 0, W, H);
@@ -1153,6 +1395,8 @@ function draw() {
 
   for (const cp of level.checkpoints) drawCheckpoint(cp);
   for (const b of level.batteries) if (!b.collected) drawBattery(b.x, b.y, frameCount);
+  for (const e of level.enemies) if (e.alive) drawEnemy(e, frameCount);
+  for (const p of projectiles) drawProjectile(p);
 
   const gx = level.goal.x - cameraX;
   if (gx + level.goal.w > 0 && gx < W) {
