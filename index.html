@@ -30,14 +30,6 @@
     height:540px;
     filter: contrast(1.05) brightness(1);
   }
-  #stage.shake{ animation: shake 0.15s infinite; }
-  @keyframes shake{
-    0%{ transform: translate(0,0); }
-    25%{ transform: translate(1.5px,-1px); }
-    50%{ transform: translate(-2px,1px); }
-    75%{ transform: translate(1px,2px); }
-    100%{ transform: translate(-1px,-1.5px); }
-  }
 
   canvas{
     position:absolute;
@@ -783,7 +775,19 @@ function updateSanity(dt, monsterDist){
   fearLevel = 1 - sanity;
   if (monster.state === 'chase') fearLevel = Math.max(fearLevel, 1 - Math.min(1, monsterDist/260));
   stage.style.setProperty('--fear', fearLevel.toFixed(3));
-  stage.classList.toggle('shake', fearLevel > 0.72);
+}
+
+const SHAKE_RADIUS = 200;
+function updateScreenShake(monsterDist){
+  const proximity = Math.max(0, 1 - monsterDist/SHAKE_RADIUS);
+  const mag = proximity * proximity * 12; // eases in, sharpens as it nears you
+  if (mag > 0.15){
+    const jx = (Math.random()-0.5) * mag;
+    const jy = (Math.random()-0.5) * mag;
+    stage.style.transform = `translate(${jx.toFixed(2)}px, ${jy.toFixed(2)}px)`;
+  } else if (stage.style.transform){
+    stage.style.transform = '';
+  }
 }
 
 function updateAudioLoop(dt, monsterDist){
@@ -1106,6 +1110,7 @@ function loop(ts){
     updateItems();
     updateBattery(dt);
     updateSanity(dt, monsterDist);
+    updateScreenShake(monsterDist);
     updateAudioLoop(dt, monsterDist);
     drawScene();
 
@@ -1122,7 +1127,7 @@ function loop(ts){
 
 function onLose(){
   state = 'lose';
-  stage.classList.remove('shake');
+  stage.style.transform = '';
   stage.style.setProperty('--fear','0');
   const elapsed = ((performance.now()-startTime)/1000).toFixed(0);
   document.getElementById('loseStat').textContent = `Survived ${elapsed}s · ${foundNotes}/${notes.length} notes found`;
@@ -1142,7 +1147,7 @@ function onLose(){
 
 function onWin(){
   state = 'win';
-  stage.classList.remove('shake');
+  stage.style.transform = '';
   stage.style.setProperty('--fear','0');
   const elapsed = ((performance.now()-startTime)/1000).toFixed(0);
   document.getElementById('winStat').textContent = `Escaped in ${elapsed}s · ${foundNotes}/${notes.length} notes found`;
