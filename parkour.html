@@ -209,6 +209,7 @@
     <span id="timer">Time: 0.0s</span>
     <span id="deaths">Deaths: 0</span>
     <span id="clone-status">Clones: 0/1</span>
+    <span id="dash-status">Dash: ready</span>
     <span id="battery-hud" class="battery-count">🔋 0</span>
   </div>
   <div id="message"></div>
@@ -216,6 +217,8 @@
     <span class="key">A</span>/<span class="key">D</span> move &nbsp;|&nbsp;
     <span class="key">SPACE</span> jump &nbsp;|&nbsp;
     <span class="key">E</span> drop clone, jump again near it for a <b>double jump</b> &nbsp;|&nbsp;
+    <span class="key">SHIFT</span> dash &nbsp;|&nbsp;
+    jump toward a wall to <b>wall-jump</b> off it &nbsp;|&nbsp;
     <span class="key">P</span> pause &nbsp;|&nbsp;
     <span class="key">R</span> restart &nbsp;|&nbsp;
     <span class="key">M</span> mute
@@ -231,6 +234,7 @@ const messageEl = document.getElementById('message');
 const timerEl = document.getElementById('timer');
 const deathsEl = document.getElementById('deaths');
 const cloneStatusEl = document.getElementById('clone-status');
+const dashStatusEl = document.getElementById('dash-status');
 const batteryHudEl = document.getElementById('battery-hud');
 const panelMenu = document.getElementById('panel-menu');
 const panelShop = document.getElementById('panel-shop');
@@ -244,6 +248,15 @@ const BASE_MOVE_SPEED = 5;
 const BASE_JUMP_VELOCITY = -13.5;
 const BASE_CLONE_REACH = 170;
 const PLAYER_W = 28, PLAYER_H = 40;
+
+const WALL_JUMP_PUSH_SPEED = 8;
+const WALL_JUMP_LOCK_FRAMES = 14;
+const WALL_COYOTE_FRAMES = 6;
+const WALL_SLIDE_MAX_FALL = 3.5;
+
+const DASH_SPEED = 11;
+const DASH_FRAMES = 12;
+const DASH_COOLDOWN_FRAMES = 42;
 
 // =======================================================================
 // Save data & upgrades
@@ -332,6 +345,8 @@ const Sound = (() => {
     jump: () => { ensure(); tone({ freq: 420, glideTo: 640, dur: 0.12, type: 'square', gain: 0.15 }); },
     clonePlace: () => { ensure(); tone({ freq: 300, glideTo: 500, dur: 0.1, type: 'sawtooth', gain: 0.1 }); tone({ freq: 600, dur: 0.08, type: 'sine', gain: 0.08, delay: 0.05 }); },
     cloneJump: () => { ensure(); tone({ freq: 500, glideTo: 900, dur: 0.18, type: 'square', gain: 0.18 }); },
+    wallJump: () => { ensure(); tone({ freq: 460, glideTo: 760, dur: 0.14, type: 'sawtooth', gain: 0.16 }); },
+    dash: () => { ensure(); tone({ freq: 900, glideTo: 300, dur: 0.13, type: 'sawtooth', gain: 0.15 }); },
     death: () => { ensure(); tone({ freq: 300, glideTo: 60, dur: 0.35, type: 'sawtooth', gain: 0.2 }); },
     batteryPickup: () => { ensure(); tone({ freq: 700, dur: 0.08, type: 'sine', gain: 0.15 }); tone({ freq: 1000, dur: 0.1, type: 'sine', gain: 0.12, delay: 0.06 }); },
     checkpoint: () => { ensure(); tone({ freq: 500, dur: 0.1, type: 'triangle', gain: 0.12 }); tone({ freq: 750, dur: 0.15, type: 'triangle', gain: 0.1, delay: 0.08 }); },
@@ -405,10 +420,8 @@ const LEVELS = [
       { x: 2770, y: 320, w: 20, h: 60, spawnX: 2770, spawnY: 340 },
     ],
     batteries: [
-      { x: 200, y: 430 }, { x: 610, y: 430 }, { x: 810, y: 430 },
-      { x: 1020, y: 380 }, { x: 1460, y: 380 }, { x: 1700, y: 320 },
-      { x: 1920, y: 260 }, { x: 2350, y: 430 }, { x: 2780, y: 350 },
-      { x: 3700, y: 430 },
+      { x: 200, y: 430 }, { x: 1460, y: 380 }, { x: 1920, y: 260 },
+      { x: 2780, y: 350 }, { x: 3700, y: 430 },
     ],
   },
   {
@@ -437,10 +450,65 @@ const LEVELS = [
       { x: 2720, y: 400, w: 20, h: 60, spawnX: 2720, spawnY: 420 },
     ],
     batteries: [
-      { x: 150, y: 430 }, { x: 565, y: 430 }, { x: 900, y: 430 },
-      { x: 1120, y: 370 }, { x: 1520, y: 370 }, { x: 1770, y: 310 },
-      { x: 1990, y: 250 }, { x: 2500, y: 430 }, { x: 2730, y: 430 },
-      { x: 3300, y: 430 },
+      { x: 150, y: 430 }, { x: 1520, y: 370 }, { x: 1990, y: 250 },
+      { x: 2730, y: 430 }, { x: 3300, y: 430 },
+    ],
+  },
+  {
+    id: 'level3', name: 'Level 3 — Wall Yard',
+    width: 2450, startX: 40, startY: 400,
+    platforms: [
+      { x: 0,    y: 460, w: 380, h: 80 },
+      { x: 500,  y: 460, w: 120, h: 80 },
+      { x: 700,  y: 460, w: 360, h: 80 },
+      { x: 880,  y: 150, w: 30,  h: 200, wall: true },
+      { x: 1000, y: 150, w: 30,  h: 200, wall: true },
+      { x: 900,  y: 120, w: 180, h: 20, oneWay: true },
+      { x: 1380, y: 120, w: 110, h: 20 },
+      { x: 1510, y: 280, w: 140, h: 20 },
+      { x: 1650, y: 400, w: 120, h: 80 },
+      { x: 2070, y: 400, w: 300, h: 80 },
+    ],
+    spikes: [
+      { x: 1850, y: 440, w: 130, h: 20 },
+    ],
+    goal: { x: 2280, y: 320, w: 40, h: 80 },
+    checkpoints: [
+      { x: 950,  y: 60,  w: 20, h: 60, spawnX: 950,  spawnY: 80 },
+      { x: 1690, y: 340, w: 20, h: 60, spawnX: 1690, spawnY: 360 },
+    ],
+    batteries: [
+      { x: 150, y: 430 }, { x: 1000, y: 90 }, { x: 1420, y: 90 },
+      { x: 1560, y: 250 }, { x: 2200, y: 370 },
+    ],
+  },
+  {
+    id: 'level4', name: 'Level 4 — Dash Circuit',
+    width: 3100, startX: 40, startY: 400,
+    platforms: [
+      { x: 0,    y: 460, w: 380, h: 80 },
+      { x: 500,  y: 460, w: 120, h: 80 },
+      { x: 700,  y: 460, w: 200, h: 80 },
+      { x: 900,  y: 370, w: 500, h: 20 },
+      { x: 900,  y: 460, w: 110, h: 80 },
+      { x: 1120, y: 460, w: 280, h: 80 },
+      { x: 1500, y: 460, w: 100, h: 80 },
+      { x: 1700, y: 400, w: 110, h: 20 },
+      { x: 1910, y: 400, w: 140, h: 140 },
+      { x: 2350, y: 340, w: 120, h: 20 },
+      { x: 2620, y: 460, w: 400, h: 80 },
+    ],
+    spikes: [
+      { x: 2520, y: 440, w: 70, h: 20 },
+    ],
+    goal: { x: 2820, y: 380, w: 40, h: 80 },
+    checkpoints: [
+      { x: 1300, y: 400, w: 20, h: 60, spawnX: 1300, spawnY: 420 },
+      { x: 1950, y: 340, w: 20, h: 60, spawnX: 1950, spawnY: 360 },
+    ],
+    batteries: [
+      { x: 150, y: 430 }, { x: 1250, y: 430 }, { x: 1550, y: 370 },
+      { x: 2000, y: 370 }, { x: 2750, y: 430 },
     ],
   },
 ];
@@ -464,7 +532,11 @@ let respawnPoint = { x: 0, y: 0 };
 let toastTimer = null;
 
 const keys = {};
-const player = { x: 0, y: 0, w: PLAYER_W, h: PLAYER_H, vx: 0, vy: 0, grounded: false, facing: 1, runCycle: 0, squashX: 1, squashY: 1 };
+const player = {
+  x: 0, y: 0, w: PLAYER_W, h: PLAYER_H, vx: 0, vy: 0, grounded: false, facing: 1, runCycle: 0, squashX: 1, squashY: 1,
+  touchingWallSide: 0, wallCoyote: 0, wallJumpLockFrames: 0, wallJumpVx: 0,
+  dashing: false, dashFramesLeft: 0, dashCooldownFrames: 0, dashDir: 1,
+};
 let clones = []; // { x, y, w, h }
 let particles = [];
 
@@ -494,6 +566,8 @@ function resetRunState() {
   player.x = level.startX; player.y = level.startY;
   player.vx = 0; player.vy = 0; player.grounded = false; player.facing = 1;
   player.runCycle = 0; player.squashX = 1; player.squashY = 1;
+  player.touchingWallSide = 0; player.wallCoyote = 0; player.wallJumpLockFrames = 0; player.wallJumpVx = 0;
+  player.dashing = false; player.dashFramesLeft = 0; player.dashCooldownFrames = 0;
   respawnPoint = { x: level.startX, y: level.startY };
   clones = [];
   particles = [];
@@ -507,6 +581,8 @@ function resetRunState() {
 function respawnPlayer() {
   player.x = respawnPoint.x; player.y = respawnPoint.y;
   player.vx = 0; player.vy = 0; player.grounded = false;
+  player.touchingWallSide = 0; player.wallCoyote = 0; player.wallJumpLockFrames = 0;
+  player.dashing = false; player.dashFramesLeft = 0;
   clones = [];
 }
 
@@ -681,6 +757,10 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     if (gameState === 'playing') tryDropClone();
   }
+  if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+    e.preventDefault();
+    if (gameState === 'playing') tryDash();
+  }
   if (e.code === 'KeyR') {
     e.preventDefault();
     if (gameState === 'playing' || gameState === 'paused') restartLevel();
@@ -707,6 +787,18 @@ function tryJump() {
     player.squashX = 0.8; player.squashY = 1.25;
     Sound.jump();
     spawnParticles(player.x + player.w / 2, player.y + player.h, '#7fd7ff', 8);
+    return;
+  }
+  if (player.touchingWallSide !== 0 && player.wallCoyote > 0) {
+    player.vy = effectiveJumpVelocity();
+    player.wallJumpVx = -player.touchingWallSide * WALL_JUMP_PUSH_SPEED;
+    player.wallJumpLockFrames = WALL_JUMP_LOCK_FRAMES;
+    player.facing = -player.touchingWallSide;
+    player.squashX = 0.75; player.squashY = 1.3;
+    Sound.wallJump();
+    spawnParticles(player.x + player.w / 2, player.y + player.h / 2, '#4fc3ff', 16);
+    player.touchingWallSide = 0;
+    player.wallCoyote = 0;
     return;
   }
   if (clones.length === 0) return;
@@ -736,6 +828,19 @@ function tryDropClone() {
   spawnParticles(c.x + c.w / 2, c.y + c.h / 2, '#5adfff', 14);
 }
 
+function tryDash() {
+  // grounded-only: a dash mid-jump would extend jump arcs far enough to
+  // trivialize gaps that are meant to require a clone double jump.
+  if (!player.grounded) return;
+  if (player.dashCooldownFrames > 0 || player.dashing) return;
+  player.dashing = true;
+  player.dashFramesLeft = DASH_FRAMES;
+  player.dashDir = player.facing;
+  player.dashCooldownFrames = DASH_COOLDOWN_FRAMES;
+  Sound.dash();
+  spawnParticles(player.x + player.w / 2, player.y + player.h / 2, '#7fd7ff', 10);
+}
+
 // =======================================================================
 // Physics / collision
 // =======================================================================
@@ -746,6 +851,7 @@ function rectsOverlap(a, b) {
 function moveAndCollide(dx, dy) {
   player.x += dx;
   for (const p of level.platforms) {
+    if (p.oneWay) continue; // one-way platforms only collide when landing from above
     if (rectsOverlap(player, p)) {
       if (dx > 0) player.x = p.x - player.w;
       else if (dx < 0) player.x = p.x + p.w;
@@ -757,6 +863,7 @@ function moveAndCollide(dx, dy) {
   const wasGrounded = player.grounded;
   player.grounded = false;
   for (const p of level.platforms) {
+    if (p.oneWay && dy <= 0) continue; // pass through freely while rising
     if (rectsOverlap(player, p)) {
       if (dy > 0) { player.y = p.y - player.h; player.vy = 0; player.grounded = true; }
       else if (dy < 0) { player.y = p.y + p.h; player.vy = 0; }
@@ -768,22 +875,70 @@ function moveAndCollide(dx, dy) {
   }
 }
 
+// Probes just outside the player's left/right edges for `wall:true` platforms,
+// independent of movement direction — lets the player wall-jump while sliding
+// down a wall even with zero horizontal input.
+function updateWallContact() {
+  if (player.grounded) { player.touchingWallSide = 0; return; }
+  const rightProbe = { x: player.x + player.w, y: player.y + 2, w: 1, h: player.h - 4 };
+  const leftProbe = { x: player.x - 1, y: player.y + 2, w: 1, h: player.h - 4 };
+  let side = 0;
+  for (const p of level.platforms) {
+    if (!p.wall) continue;
+    if (rectsOverlap(rightProbe, p)) { side = 1; break; }
+    if (rectsOverlap(leftProbe, p)) { side = -1; break; }
+  }
+  if (side !== 0) {
+    player.touchingWallSide = side;
+    player.wallCoyote = WALL_COYOTE_FRAMES;
+  } else if (player.wallCoyote > 0) {
+    player.wallCoyote--;
+    if (player.wallCoyote <= 0) player.touchingWallSide = 0;
+  } else {
+    player.touchingWallSide = 0;
+  }
+}
+
 function update() {
   if (gameState !== 'playing') return;
 
-  let move = 0;
-  if (keys['KeyA'] || keys['ArrowLeft']) move -= 1;
-  if (keys['KeyD'] || keys['ArrowRight']) move += 1;
-  player.vx = move * effectiveMoveSpeed();
-  if (move !== 0) player.facing = move;
+  if (player.dashCooldownFrames > 0) player.dashCooldownFrames--;
 
-  player.vy += GRAVITY;
-  player.vy = Math.min(player.vy, 22);
+  if (player.dashing) {
+    player.vx = player.dashDir * DASH_SPEED;
+    player.vy = 0; // flat burst — gravity paused for the duration of the dash
+    player.dashFramesLeft--;
+    if (player.dashFramesLeft <= 0) player.dashing = false;
+    particles.push({
+      x: player.x + player.w / 2 - player.dashDir * player.w / 2, y: player.y + player.h / 2,
+      vx: 0, vy: 0, life: 10, color: '#7fd7ff',
+    });
+  } else if (player.wallJumpLockFrames > 0) {
+    player.vx = player.wallJumpVx;
+    player.wallJumpLockFrames--;
+    player.vy += GRAVITY;
+    player.vy = Math.min(player.vy, 22);
+  } else {
+    let move = 0;
+    if (keys['KeyA'] || keys['ArrowLeft']) move -= 1;
+    if (keys['KeyD'] || keys['ArrowRight']) move += 1;
+    player.vx = move * effectiveMoveSpeed();
+    if (move !== 0) player.facing = move;
+
+    player.vy += GRAVITY;
+    player.vy = Math.min(player.vy, 22);
+
+    if (!player.grounded && player.touchingWallSide !== 0 && player.vy > WALL_SLIDE_MAX_FALL) {
+      const pressingIn = (player.touchingWallSide === 1 && move > 0) || (player.touchingWallSide === -1 && move < 0);
+      if (pressingIn) player.vy = WALL_SLIDE_MAX_FALL;
+    }
+  }
 
   moveAndCollide(player.vx, 0);
   moveAndCollide(0, player.vy);
+  updateWallContact();
 
-  if (player.grounded && Math.abs(player.vx) > 0.1) player.runCycle += 0.35;
+  if (player.grounded && Math.abs(player.vx) > 0.1 && !player.dashing) player.runCycle += 0.35;
   player.squashX += (1 - player.squashX) * 0.25;
   player.squashY += (1 - player.squashY) * 0.25;
 
@@ -947,6 +1102,30 @@ function draw() {
   for (const p of level.platforms) {
     const sx = p.x - cameraX;
     if (sx + p.w < 0 || sx > W) continue;
+    if (p.wall) {
+      const grad = ctx.createLinearGradient(sx, 0, sx + p.w, 0);
+      grad.addColorStop(0, '#1c2438');
+      grad.addColorStop(0.5, '#2d4a66');
+      grad.addColorStop(1, '#1c2438');
+      ctx.fillStyle = grad;
+      ctx.fillRect(sx, p.y, p.w, p.h);
+      ctx.strokeStyle = 'rgba(127,215,255,0.4)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([6, 6]);
+      ctx.strokeRect(sx + 2, p.y + 2, p.w - 4, p.h - 4);
+      ctx.setLineDash([]);
+      continue;
+    }
+    if (p.oneWay) {
+      ctx.fillStyle = 'rgba(90,127,184,0.55)';
+      ctx.fillRect(sx, p.y, p.w, p.h);
+      ctx.strokeStyle = 'rgba(127,215,255,0.6)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 5]);
+      ctx.beginPath(); ctx.moveTo(sx, p.y); ctx.lineTo(sx + p.w, p.y); ctx.stroke();
+      ctx.setLineDash([]);
+      continue;
+    }
     const grad = ctx.createLinearGradient(0, p.y, 0, p.y + p.h);
     grad.addColorStop(0, '#3a4a66');
     grad.addColorStop(1, '#1c2438');
@@ -1047,6 +1226,7 @@ function tick(now) {
   timerEl.textContent = `Time: ${(runElapsedMs / 1000).toFixed(1)}s`;
   deathsEl.textContent = `Deaths: ${deaths}`;
   cloneStatusEl.textContent = `Clones: ${clones.length}/${effectiveMaxClones()}`;
+  dashStatusEl.textContent = player.dashCooldownFrames > 0 ? `Dash: ${Math.ceil(player.dashCooldownFrames / 60 * 10) / 10}s` : 'Dash: ready';
   batteryHudEl.textContent = `🔋 ${save.batteries}`;
 
   requestAnimationFrame(tick);
